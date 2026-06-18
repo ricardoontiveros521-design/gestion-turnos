@@ -1,6 +1,8 @@
 import streamlit as st
 from datetime import datetime, time, timezone, timedelta
 import pandas as pd
+import matplotlib.pyplot as plt
+import io
 
 # ─── CONSTANTES ───────────────────────────────────────────────────────────────
 
@@ -69,6 +71,31 @@ def texto_situacion(estados, max_real):
     if rojos:
         partes.append(f"El {rojos[0]} ya no es posible en este turno.")
     return " ".join(partes)
+
+def tabla_a_png(df: "pd.DataFrame", titulo: str) -> io.BytesIO:
+    n = len(df)
+    fig, ax = plt.subplots(figsize=(9, max(2.5, n * 0.38 + 1.2)))
+    ax.axis("off")
+    tbl = ax.table(
+        cellText=df.values,
+        colLabels=df.columns.tolist(),
+        cellLoc="center",
+        loc="center",
+    )
+    tbl.auto_set_font_size(False)
+    tbl.set_fontsize(9)
+    tbl.scale(1, 1.5)
+    for j in range(len(df.columns)):
+        tbl[(0, j)].set_facecolor("#2c3e50")
+        tbl[(0, j)].set_text_props(color="white", fontweight="bold")
+        tbl[(n, j)].set_facecolor("#dfe6e9")
+        tbl[(n, j)].set_text_props(fontweight="bold")
+    ax.set_title(titulo, fontsize=11, fontweight="bold", pad=14)
+    buf = io.BytesIO()
+    plt.savefig(buf, format="png", dpi=150, bbox_inches="tight", facecolor="white")
+    buf.seek(0)
+    plt.close(fig)
+    return buf
 
 def get_filas_turno(turno_sel: str, es_sabado: bool):
     """Devuelve lista de (etiqueta_rango, minutos_base) por fila de la tabla."""
@@ -215,12 +242,15 @@ if st.button("Calcular", type="primary", use_container_width=True):
         f"{turno_sel} · {m2str(inicio_m)} – {m2str(fin_m_raw)}  ·  Hora: {hora_str}"
     )
 
-    c1, c2, c3 = st.columns(3)
-    c1.metric("Llevan",    f"{piezas:,} pz")
-    c2.metric("Esperadas", f"{esperadas:,} pz")
+    eficiencia = (piezas / esperadas * 100) if esperadas > 0 else 0.0
+    c1, c2, c3, c4 = st.columns(4)
+    c1.metric("Llevan",      f"{piezas:,} pz")
+    c2.metric("Esperadas",   f"{esperadas:,} pz")
     c3.metric("Diferencia",
               f"{'+' if diferencia >= 0 else ''}{diferencia:,} pz",
               delta=diferencia, delta_color="normal")
+    c4.metric("Eficiencia",  f"{eficiencia:.1f}%",
+              f"{eficiencia - 100:+.1f}%", delta_color="normal")
 
     st.subheader("Proyecciones")
     c4, c5, c6 = st.columns(3)
@@ -385,3 +415,13 @@ tabla_rows.append(totales)
 df_plan = pd.DataFrame(tabla_rows, columns=["Hora", "101%", "100%", "90%", "85%", "Acumulado"])
 
 st.dataframe(df_plan, use_container_width=True, hide_index=True)
+
+titulo_img = f"Tabla de planeación — {turno_sel} · {meta_pzh:.0f} pz/h"
+img_buf = tabla_a_png(df_plan, titulo_img)
+st.download_button(
+    "📥 Descargar tabla como imagen",
+    data=img_buf,
+    file_name="tabla_planeacion.png",
+    mime="image/png",
+    use_container_width=True,
+)
