@@ -12,9 +12,10 @@ INDICADORES = [
 ]
 
 TURNOS = {
-    "Turno A": {"inicio": time(6,  0),  "fin": time(15, 30)},
-    "Turno B": {"inicio": time(15, 30), "fin": time(0,  0)},
-    "Turno C": {"inicio": time(0,  0),  "fin": time(6,  0)},
+    "Turno A":      {"inicio": time(6,  0),  "fin": time(15, 30)},
+    "Turno B":      {"inicio": time(15, 30), "fin": time(0,  0)},
+    "Turno C":      {"inicio": time(0,  0),  "fin": time(6,  0)},
+    "Tiempo Extra": {"inicio": time(6,  0),  "fin": time(14, 0)},
 }
 
 AJUSTE_MIN = 10
@@ -88,6 +89,10 @@ def get_filas_turno(turno_sel: str, es_sabado: bool):
         n = 12 if es_sabado else 6
         for i in range(n):
             ini = i * 60
+            filas.append((f"{m2str(ini)}–{m2str(ini + 60)}", 60))
+    elif turno_sel == "Tiempo Extra":
+        for i in range(8):
+            ini = 360 + i * 60
             filas.append((f"{m2str(ini)}–{m2str(ini + 60)}", 60))
     return filas
 
