@@ -313,30 +313,34 @@ else:
     break_idxs = []
 
 # ── Construir y mostrar tabla ─────────────────────────────────────────────────
+n      = len(filas)
+redist = (meta_pzh / 60 * 10) / (n - 1) if n > 1 else 0
+
 tabla_rows = []
 for idx, (label, base_min) in enumerate(filas):
-    minutos = base_min
-    if idx == hora_comida_idx:
-        minutos -= COMIDA_MIN
-    minutos -= break_idxs.count(idx) * 15
+    is_first   = idx == 0
+    is_last    = idx == n - 1
+    comida_ded = COMIDA_MIN if idx == hora_comida_idx else 0
+    break_ded  = break_idxs.count(idx) * 15
+
+    if is_first:
+        minutos = base_min - 10 - comida_ded - break_ded
+    elif is_last:
+        minutos = base_min - comida_ded - break_ded - 10
+    else:
+        minutos = base_min - comida_ded - break_ded
+
     minutos = max(minutos, 0)
+    base_pz = (meta_pzh / 60) * minutos + (0 if is_last else redist)
+
     tabla_rows.append([
         label,
-        round((meta_pzh / 60) * minutos * 1.01),
-        round((meta_pzh / 60) * minutos * 1.00),
-        round((meta_pzh / 60) * minutos * 0.90),
-        round((meta_pzh / 60) * minutos * 0.85),
+        round(base_pz * 1.01),
+        round(base_pz * 1.00),
+        round(base_pz * 0.90),
+        round(base_pz * 0.85),
     ])
 
 df_plan = pd.DataFrame(tabla_rows, columns=["Hora", "101%", "100%", "90%", "85%"])
 
-def _highlight_85(col):
-    if col.name == "85%":
-        return ["background-color: #ffdddd"] * len(col)
-    return [""] * len(col)
-
-st.dataframe(
-    df_plan.style.apply(_highlight_85),
-    use_container_width=True,
-    hide_index=True,
-)
+st.dataframe(df_plan, use_container_width=True, hide_index=True)
