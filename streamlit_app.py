@@ -341,6 +341,21 @@ for idx, (label, base_min) in enumerate(filas):
         round(base_pz * 0.85),
     ])
 
-df_plan = pd.DataFrame(tabla_rows, columns=["Hora", "101%", "100%", "90%", "85%"])
+# Columna de acumulado (running total de 100%)
+running = 0
+for row in tabla_rows:
+    running += row[2]   # índice 2 = 100%
+    row.append(running)
+
+# Fila de totales
+totales = ["Total",
+           sum(r[1] for r in tabla_rows),
+           sum(r[2] for r in tabla_rows),
+           sum(r[3] for r in tabla_rows),
+           sum(r[4] for r in tabla_rows),
+           running]
+tabla_rows.append(totales)
+
+df_plan = pd.DataFrame(tabla_rows, columns=["Hora", "101%", "100%", "90%", "85%", "Acumulado"])
 
 st.dataframe(df_plan, use_container_width=True, hide_index=True)
