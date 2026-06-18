@@ -331,8 +331,10 @@ for idx, (label, base_min) in enumerate(filas):
         minutos = base_min - comida_ded - break_ded
 
     minutos = max(minutos, 0)
-    pz_puro = (meta_pzh / 60) * minutos          # sin redistribución
-    base_pz = pz_puro + (0 if is_last else redist)
+    # Para el acumulado la última hora usa 60 min (sin el -10 de parada anticipada)
+    minutos_acum = max(base_min - comida_ded - break_ded, 0) if is_last else minutos
+    pz_acum = (meta_pzh / 60) * minutos_acum
+    base_pz = (meta_pzh / 60) * minutos + (0 if is_last else redist)
 
     tabla_rows.append([
         label,
@@ -340,7 +342,7 @@ for idx, (label, base_min) in enumerate(filas):
         round(base_pz * 1.00),
         round(base_pz * 0.90),
         round(base_pz * 0.85),
-        round(pz_puro),   # valor puro temporal para acumulado
+        round(pz_acum),   # temporal para acumulado
     ])
 
 # Columna de acumulado (running total de 100% sin redistribución)
