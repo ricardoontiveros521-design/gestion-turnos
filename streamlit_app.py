@@ -206,14 +206,15 @@ if st.button("Calcular", type="primary", use_container_width=True):
         if f <= 0:
             detalle = "alcanzado"
         elif estado == "✅":
-            eta_s = f" · ~{m2str(eta_r)}" if eta_r else ""
-            detalle = f"faltan {f:,} pz{eta_s}"
+            eta_s = f" · terminas ~{m2str(eta_r)}" if eta_r else ""
+            nec_s = f" · necesitas {r_nec} pz/h" if r_nec else ""
+            detalle = f"faltan {f:,} pz{eta_s}{nec_s}"
         elif estado == "⚡":
             eta_s = f" · con turbo ~{m2str(eta_t)}" if eta_t else ""
             nec_s = f" · necesitas {r_nec} pz/h" if r_nec else ""
             detalle = f"faltan {f:,} pz{eta_s}{nec_s}"
         else:
-            nec_s = f" (necesitarías {r_nec} pz/h)" if r_nec else ""
+            nec_s = f" · necesitarías {r_nec} pz/h" if r_nec else ""
             detalle = f"faltan {f:,} pz · imposible{nec_s}"
 
         st.markdown(f"**{estado} {lbl}** → `{meta_v:,} pz`&nbsp;&nbsp;&nbsp;{detalle}")
