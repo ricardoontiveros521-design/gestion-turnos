@@ -1,5 +1,5 @@
 import streamlit as st
-from datetime import datetime, time, timedelta
+from datetime import datetime, time
 
 # ─── CONSTANTES ───────────────────────────────────────────────────────────────
 
@@ -10,18 +10,37 @@ INDICADORES = [
     ("101%", 1.01),
 ]
 
+TURNOS = {
+    "Turno A": {"inicio": time(6,  0),  "fin": time(15, 30)},
+    "Turno B": {"inicio": time(15, 30), "fin": time(0,  0)},
+    "Turno C": {"inicio": time(0,  0),  "fin": time(6,  0)},
+}
+
+AJUSTE_MIN = 10
+COMIDA_MIN = 30
+
 # ─── HELPERS ──────────────────────────────────────────────────────────────────
 
 def t2m(t: time) -> int:
     return t.hour * 60 + t.minute
 
 def m2str(m: int) -> str:
-    m = int(m) % (24 * 60)
+    m = int(m) % 1440
     h = (m // 60) % 24
-    mins = m % 60
+    mn = m % 60
     suf = "am" if h < 12 else "pm"
     h12 = h % 12 or 12
-    return f"{h12}:{mins:02d}{suf}"
+    return f"{h12}:{mn:02d}{suf}"
+
+def fin_ajustado(inicio_m: int, fin_m: int) -> int:
+    """Para turnos que cruzan medianoche, ajusta fin > inicio."""
+    return fin_m + 1440 if fin_m <= inicio_m else fin_m
+
+def hora_en_turno(hora_m: int, inicio_m: int) -> int:
+    """Ajusta la hora actual si el turno empezó ayer (cruza medianoche)."""
+    if inicio_m > 720 and hora_m < 720:
+        return hora_m + 1440
+    return hora_m
 
 def get_estado(piezas, proy_real, proy_turbo, meta):
     if piezas >= meta or proy_real >= meta:
@@ -56,43 +75,26 @@ def texto_situacion(estados, max_real):
 st.set_page_config(page_title="Monitor de Turno", page_icon="🏭", layout="centered")
 st.title("🏭 Monitor de Turno")
 
-# ── Configuración del turno ──────────────────────────────────────────────────
-with st.expander("⚙️ Configuración del turno", expanded=True):
-    col_t1, col_t2 = st.columns(2)
-    with col_t1:
-        inicio_turno = st.time_input("Inicio del turno", value=time(0, 0))
-    with col_t2:
-        fin_turno = st.time_input("Fin del turno", value=time(6, 0))
+# ── Selector de turno ────────────────────────────────────────────────────────
+turno_sel  = st.selectbox("Turno", list(TURNOS.keys()))
+turno_cfg  = TURNOS[turno_sel]
+inicio_m   = t2m(turno_cfg["inicio"])
+fin_m_raw  = t2m(turno_cfg["fin"])
+fin_m      = fin_ajustado(inicio_m, fin_m_raw)
+fin_real_m = fin_m - AJUSTE_MIN
 
-    col_t3, col_t4 = st.columns(2)
-    with col_t3:
-        ajuste_min = st.number_input(
-            "Minutos de ajuste (arranque / parada anticipada)",
-            min_value=0, max_value=60, value=10, step=1
-        )
-    with col_t4:
-        comida_min = st.number_input(
-            "Duración de comida (min)",
-            min_value=0, max_value=60, value=30, step=5
-        )
-
-# Derivados del turno
-inicio_turno_m = t2m(inicio_turno)
-fin_turno_m    = t2m(fin_turno)
-fin_real_m     = fin_turno_m - ajuste_min
-
-duracion_total = fin_turno_m - inicio_turno_m
-min_oficiales  = duracion_total - ajuste_min - comida_min
-min_reales     = min_oficiales - ajuste_min
+duracion_total = fin_m - inicio_m
+min_oficiales  = duracion_total - AJUSTE_MIN - COMIDA_MIN
+min_reales     = min_oficiales  - AJUSTE_MIN
 
 st.caption(
-    f"Línea activa: **{m2str(inicio_turno_m + ajuste_min)}** → **{m2str(fin_real_m)}** "
-    f"· Minutos oficiales: {min_oficiales} · Minutos reales: {min_reales}"
+    f"Línea activa: **{m2str(inicio_m + AJUSTE_MIN)}** → **{m2str(fin_real_m)}** "
+    f"· Min. oficiales: {min_oficiales} · Min. reales: {min_reales}"
 )
 
 st.divider()
 
-# ── Datos de producción ──────────────────────────────────────────────────────
+# ── Producción ───────────────────────────────────────────────────────────────
 col1, col2 = st.columns(2)
 with col1:
     meta_pzh = st.number_input("Meta pz/h", min_value=1.0, value=500.0, step=10.0)
@@ -102,24 +104,35 @@ with col2:
 if max_real_pzh < meta_pzh:
     st.warning(f"El máximo real ({max_real_pzh:.0f}) es menor a la meta ({meta_pzh:.0f}). Verifica los datos.")
 
-hora_actual = st.time_input("Hora actual", value=time(0, 0))
+# ── Descansos ────────────────────────────────────────────────────────────────
+es_sabado = datetime.now().weekday() == 5
+
+if turno_sel == "Turno C":
+    max_breaks = 2 if es_sabado else 0
+else:
+    max_breaks = 1
 
 col3, col4 = st.columns(2)
 with col3:
-    comio = st.checkbox("¿Ya comieron?")
+    comio = st.checkbox("¿Ya comiste?")
 with col4:
-    breaks = st.selectbox("Breaks tomados", [0, 1, 2])
+    if max_breaks == 0:
+        st.caption("Sin breaks en este turno")
+        breaks = 0
+    else:
+        breaks = st.selectbox("¿Cuántos breaks tomaste?", list(range(max_breaks + 1)))
 
 piezas = int(st.number_input("Piezas que llevan", min_value=0, value=0, step=1))
 
 # ── Calcular ─────────────────────────────────────────────────────────────────
 if st.button("Calcular", type="primary", use_container_width=True):
 
-    hora_actual_m = t2m(hora_actual)
+    ahora         = datetime.now()
+    hora_actual_m = hora_en_turno(ahora.hour * 60 + ahora.minute, inicio_m)
 
-    min_productivos = hora_actual_m - inicio_turno_m - ajuste_min
+    min_productivos = hora_actual_m - inicio_m - AJUSTE_MIN
     if comio:
-        min_productivos -= comida_min
+        min_productivos -= COMIDA_MIN
     min_productivos -= breaks * 15
     min_productivos  = max(min_productivos, 1)
 
@@ -140,7 +153,8 @@ if st.button("Calcular", type="primary", use_container_width=True):
         for f in faltan
     ]
 
-    clock_bf = (comida_min if not comio else 0) + max(2 - breaks, 0) * 15
+    # Breaks de reloj que aún faltan (para ETA precisa)
+    clock_bf = (COMIDA_MIN if not comio else 0) + (max_breaks - breaks) * 15
 
     eta_real_list, eta_turbo_list = [], []
     for f in faltan:
@@ -155,8 +169,12 @@ if st.button("Calcular", type="primary", use_container_width=True):
 
     # ── Output ───────────────────────────────────────────────────────────────
 
+    hora_str = m2str(ahora.hour * 60 + ahora.minute)
+
     st.divider()
-    st.subheader(f"{m2str(inicio_turno_m)} – {m2str(fin_turno_m)}  ·  Hora: {m2str(hora_actual_m)}")
+    st.subheader(
+        f"{turno_sel} · {m2str(inicio_m)} – {m2str(fin_m_raw)}  ·  Hora: {hora_str}"
+    )
 
     c1, c2, c3 = st.columns(3)
     c1.metric("Llevan",    f"{piezas:,} pz")
