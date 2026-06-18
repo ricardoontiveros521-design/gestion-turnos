@@ -1,5 +1,5 @@
 import streamlit as st
-from datetime import datetime, time
+from datetime import datetime, time, timezone, timedelta
 
 # ─── CONSTANTES ───────────────────────────────────────────────────────────────
 
@@ -75,6 +75,16 @@ def texto_situacion(estados, max_real):
 st.set_page_config(page_title="Monitor de Turno", page_icon="🏭", layout="centered")
 st.title("🏭 Monitor de Turno")
 
+# ── Zona horaria ─────────────────────────────────────────────────────────────
+utc_offset = st.sidebar.number_input(
+    "Zona horaria (UTC offset)", min_value=-12, max_value=14, value=-6, step=1,
+    help="México Centro = -6 · México Noroeste = -7"
+)
+_tz    = timezone(timedelta(hours=utc_offset))
+_ahora = datetime.now(_tz)
+
+st.sidebar.caption(f"Hora local detectada: **{_ahora.strftime('%H:%M')}**")
+
 # ── Selector de turno ────────────────────────────────────────────────────────
 turno_sel  = st.selectbox("Turno", list(TURNOS.keys()))
 turno_cfg  = TURNOS[turno_sel]
@@ -105,7 +115,7 @@ if max_real_pzh < meta_pzh:
     st.warning(f"El máximo real ({max_real_pzh:.0f}) es menor a la meta ({meta_pzh:.0f}). Verifica los datos.")
 
 # ── Descansos ────────────────────────────────────────────────────────────────
-es_sabado = datetime.now().weekday() == 5
+es_sabado = _ahora.weekday() == 5
 
 if turno_sel == "Turno C":
     max_breaks = 2 if es_sabado else 0
@@ -127,7 +137,7 @@ piezas = int(st.number_input("Piezas que llevan", min_value=0, value=0, step=1))
 # ── Calcular ─────────────────────────────────────────────────────────────────
 if st.button("Calcular", type="primary", use_container_width=True):
 
-    ahora         = datetime.now()
+    ahora         = _ahora
     hora_actual_m = hora_en_turno(ahora.hour * 60 + ahora.minute, inicio_m)
 
     min_productivos = hora_actual_m - inicio_m - AJUSTE_MIN
