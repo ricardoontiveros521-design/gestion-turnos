@@ -1,5 +1,6 @@
 import streamlit as st
 from datetime import datetime, time, timezone, timedelta
+import pandas as pd
 
 # ─── CONSTANTES ───────────────────────────────────────────────────────────────
 
@@ -33,11 +34,9 @@ def m2str(m: int) -> str:
     return f"{h12}:{mn:02d}{suf}"
 
 def fin_ajustado(inicio_m: int, fin_m: int) -> int:
-    """Para turnos que cruzan medianoche, ajusta fin > inicio."""
     return fin_m + 1440 if fin_m <= inicio_m else fin_m
 
 def hora_en_turno(hora_m: int, inicio_m: int) -> int:
-    """Ajusta la hora actual si el turno empezó ayer (cruza medianoche)."""
     if inicio_m > 720 and hora_m < 720:
         return hora_m + 1440
     return hora_m
@@ -70,6 +69,28 @@ def texto_situacion(estados, max_real):
         partes.append(f"El {rojos[0]} ya no es posible en este turno.")
     return " ".join(partes)
 
+def get_filas_turno(turno_sel: str, es_sabado: bool):
+    """Devuelve lista de (etiqueta_rango, minutos_base) por fila de la tabla."""
+    filas = []
+    if turno_sel == "Turno A":
+        # 9 horas completas + media hora al final
+        for i in range(9):
+            ini = 360 + i * 60
+            filas.append((f"{m2str(ini)}–{m2str(ini + 60)}", 60))
+        filas.append((f"{m2str(900)}–{m2str(930)}", 30))
+    elif turno_sel == "Turno B":
+        # media hora al inicio + 8 horas completas
+        filas.append((f"{m2str(930)}–{m2str(960)}", 30))
+        for i in range(8):
+            ini = 960 + i * 60
+            filas.append((f"{m2str(ini)}–{m2str(ini + 60)}", 60))
+    elif turno_sel == "Turno C":
+        n = 12 if es_sabado else 6
+        for i in range(n):
+            ini = i * 60
+            filas.append((f"{m2str(ini)}–{m2str(ini + 60)}", 60))
+    return filas
+
 # ─── UI ───────────────────────────────────────────────────────────────────────
 
 st.set_page_config(page_title="Monitor de Turno", page_icon="🏭", layout="centered")
@@ -82,6 +103,7 @@ utc_offset = st.sidebar.number_input(
 )
 _tz    = timezone(timedelta(hours=utc_offset))
 _ahora = datetime.now(_tz)
+es_sabado = _ahora.weekday() == 5
 
 st.sidebar.caption(f"Hora local detectada: **{_ahora.strftime('%H:%M')}**")
 
@@ -90,6 +112,11 @@ turno_sel  = st.selectbox("Turno", list(TURNOS.keys()))
 turno_cfg  = TURNOS[turno_sel]
 inicio_m   = t2m(turno_cfg["inicio"])
 fin_m_raw  = t2m(turno_cfg["fin"])
+
+# Turno C sábado dura 12 horas (12:00am–12:00pm)
+if turno_sel == "Turno C" and es_sabado:
+    fin_m_raw = t2m(time(12, 0))
+
 fin_m      = fin_ajustado(inicio_m, fin_m_raw)
 fin_real_m = fin_m - AJUSTE_MIN
 
@@ -115,8 +142,6 @@ if max_real_pzh < meta_pzh:
     st.warning(f"El máximo real ({max_real_pzh:.0f}) es menor a la meta ({meta_pzh:.0f}). Verifica los datos.")
 
 # ── Descansos ────────────────────────────────────────────────────────────────
-es_sabado = _ahora.weekday() == 5
-
 if turno_sel == "Turno C":
     max_breaks = 2 if es_sabado else 0
 else:
@@ -163,7 +188,6 @@ if st.button("Calcular", type="primary", use_container_width=True):
         for f in faltan
     ]
 
-    # Breaks de reloj que aún faltan (para ETA precisa)
     clock_bf = (COMIDA_MIN if not comio else 0) + (max_breaks - breaks) * 15
 
     eta_real_list, eta_turbo_list = [], []
@@ -226,3 +250,93 @@ if st.button("Calcular", type="primary", use_container_width=True):
         st.error(situacion)
     else:
         st.warning(situacion)
+
+# ─── TABLA DE PLANEACIÓN ──────────────────────────────────────────────────────
+
+st.divider()
+st.subheader("📋 Tabla de planeación")
+
+filas = get_filas_turno(turno_sel, es_sabado)
+
+# ── Selectores de hora para comida y breaks ───────────────────────────────────
+if turno_sel == "Turno C" and es_sabado:
+    # Comida: primeras 6 horas (12am–6am); breaks: últimas 6 horas (6am–12pm)
+    col_t1, col_t2 = st.columns(2)
+    with col_t1:
+        hora_comida_idx = st.selectbox(
+            "¿En qué hora comes?",
+            options=list(range(6)),
+            format_func=lambda i: filas[i][0],
+            key="hora_comida_tabla",
+        )
+    with col_t2:
+        hora_break1_idx = st.selectbox(
+            "¿En qué hora es el break 1?",
+            options=list(range(6, 12)),
+            format_func=lambda i: filas[i][0],
+            key="hora_break1_tabla",
+        )
+    hora_break2_idx = st.selectbox(
+        "¿En qué hora es el break 2?",
+        options=list(range(6, 12)),
+        format_func=lambda i: filas[i][0],
+        key="hora_break2_tabla",
+    )
+    break_idxs = [hora_break1_idx, hora_break2_idx]
+
+elif max_breaks == 1:
+    col_t1, col_t2 = st.columns(2)
+    with col_t1:
+        hora_comida_idx = st.selectbox(
+            "¿En qué hora comes?",
+            options=list(range(len(filas))),
+            format_func=lambda i: filas[i][0],
+            key="hora_comida_tabla",
+        )
+    with col_t2:
+        hora_break_idx = st.selectbox(
+            "¿En qué hora es el break?",
+            options=list(range(len(filas))),
+            format_func=lambda i: filas[i][0],
+            key="hora_break_tabla",
+        )
+    break_idxs = [hora_break_idx]
+
+else:
+    # Turno C entre semana: solo comida, sin breaks
+    hora_comida_idx = st.selectbox(
+        "¿En qué hora comes?",
+        options=list(range(len(filas))),
+        format_func=lambda i: filas[i][0],
+        key="hora_comida_tabla",
+    )
+    break_idxs = []
+
+# ── Construir y mostrar tabla ─────────────────────────────────────────────────
+tabla_rows = []
+for idx, (label, base_min) in enumerate(filas):
+    minutos = base_min
+    if idx == hora_comida_idx:
+        minutos -= COMIDA_MIN
+    minutos -= break_idxs.count(idx) * 15
+    minutos = max(minutos, 0)
+    tabla_rows.append([
+        label,
+        round((meta_pzh / 60) * minutos * 1.01),
+        round((meta_pzh / 60) * minutos * 1.00),
+        round((meta_pzh / 60) * minutos * 0.90),
+        round((meta_pzh / 60) * minutos * 0.85),
+    ])
+
+df_plan = pd.DataFrame(tabla_rows, columns=["Hora", "101%", "100%", "90%", "85%"])
+
+def _highlight_85(col):
+    if col.name == "85%":
+        return ["background-color: #ffdddd"] * len(col)
+    return [""] * len(col)
+
+st.dataframe(
+    df_plan.style.apply(_highlight_85),
+    use_container_width=True,
+    hide_index=True,
+)
