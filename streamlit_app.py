@@ -223,6 +223,23 @@ if st.button("Calcular", type="primary", use_container_width=True):
     c5.metric("📈 Ideal", f"{proy_meta:,} pz",  f"{int(meta_pzh)} pz/h",     delta_color="off")
     c6.metric("⚡ Turbo", f"{proy_turbo:,} pz", f"{int(max_real_pzh)} pz/h", delta_color="off")
 
+    # ── Alerta de ritmo crítico ───────────────────────────────────────────────
+    faltan_85 = faltan[0]
+    if faltan_85 > 0 and min_restantes > 0:
+        ritmo_min_85 = (faltan_85 / min_restantes) * 60
+        if max_real_pzh < ritmo_min_85:
+            st.error(
+                f"🚨 **El 85% ya no es recuperable** · "
+                f"incluso al máximo ({int(max_real_pzh)} pz/h) "
+                f"solo alcanzarías {round(piezas + (max_real_pzh/60)*min_restantes):,} pz"
+            )
+        elif ritmo_real < ritmo_min_85:
+            st.warning(
+                f"⚠️ **Ritmo insuficiente para el 85%** · "
+                f"llevas {ritmo_real:.0f} pz/h, necesitas al menos "
+                f"**{ritmo_min_85:.0f} pz/h** · faltan {faltan_85:,} pz en {min_restantes} min"
+            )
+
     st.subheader("Indicadores")
     for (lbl, meta_v), estado, f, eta_r, eta_t, r_nec in zip(
             metas_pz, estados, faltan, eta_real_list, eta_turbo_list, ritmos_nec):
