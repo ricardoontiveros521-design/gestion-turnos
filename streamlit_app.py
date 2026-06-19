@@ -296,19 +296,32 @@ if st.button("Calcular", type="primary", use_container_width=True):
         st.markdown(f"**{estado} {lbl}** → `{meta_v:,} pz`&nbsp;&nbsp;&nbsp;{detalle}")
 
     situacion = texto_situacion(estados, max_real_pzh)
+
+    # ETA del indicador más alto alcanzable al ritmo actual o turbo
+    eta_mejor = None
+    for i in range(len(INDICADORES) - 1, -1, -1):
+        if estados[i] == "✅" and faltan[i] > 0 and eta_real_list[i]:
+            eta_mejor = (INDICADORES[i][0], eta_real_list[i])
+            break
+        if estados[i] == "⚡" and faltan[i] > 0 and eta_turbo_list[i]:
+            eta_mejor = (INDICADORES[i][0], eta_turbo_list[i])
+            break
+
+    sufijo_eta = f" · Terminas el {eta_mejor[0]} ~{m2str(eta_mejor[1])}" if eta_mejor else ""
+
     if "muy bien" in situacion:
-        st.success(situacion)
+        st.success(situacion + sufijo_eta)
     elif "no tiene recuperación" in situacion:
         st.error(situacion)
     else:
-        st.warning(situacion)
+        st.warning(situacion + sufijo_eta)
 
     # ── Recomendación de cobertura de descansos ──────────────────────────────
     breaks_restantes = max_breaks - breaks
     hay_comida = not comio
     hay_break  = breaks_restantes > 0
 
-    if proy_real < metas_pz[0][1] and (hay_comida or hay_break) and min_restantes > 0 and ritmo_real > 0:
+    if proy_real < metas_pz[-1][1] and (hay_comida or hay_break) and min_restantes > 0 and ritmo_real > 0:
         min_break_disp = breaks_restantes * 15
         extra_comida = round((ritmo_real / 60) * COMIDA_MIN) if hay_comida else 0
         extra_break  = round((ritmo_real / 60) * min_break_disp) if hay_break else 0
