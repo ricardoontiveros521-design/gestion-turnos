@@ -97,7 +97,7 @@ def tabla_a_png(df: "pd.DataFrame", titulo: str) -> io.BytesIO:
     plt.close(fig)
     return buf
 
-def get_filas_turno(turno_sel: str, es_sabado: bool):
+def get_filas_turno(turno_sel: str, es_sabado: bool, te_inicio_m: int = 360, te_fin_m: int = 840):
     """Devuelve lista de (etiqueta_rango, minutos_base) por fila de la tabla."""
     filas = []
     if turno_sel == "Turno A":
@@ -118,9 +118,11 @@ def get_filas_turno(turno_sel: str, es_sabado: bool):
             ini = i * 60
             filas.append((f"{m2str(ini)}–{m2str(ini + 60)}", 60))
     elif turno_sel == "Tiempo Extra":
-        for i in range(8):
-            ini = 360 + i * 60
-            filas.append((f"{m2str(ini)}–{m2str(ini + 60)}", 60))
+        curr = te_inicio_m
+        while curr < te_fin_m:
+            slot_end = min(curr + 60, te_fin_m)
+            filas.append((f"{m2str(curr)}–{m2str(slot_end)}", slot_end - curr))
+            curr = slot_end
     return filas
 
 # ─── UI ───────────────────────────────────────────────────────────────────────
@@ -140,10 +142,23 @@ es_sabado = _ahora.weekday() == 5
 st.sidebar.caption(f"Hora local detectada: **{_ahora.strftime('%H:%M')}**")
 
 # ── Selector de turno ────────────────────────────────────────────────────────
-turno_sel  = st.selectbox("Turno", list(TURNOS.keys()))
-turno_cfg  = TURNOS[turno_sel]
-inicio_m   = t2m(turno_cfg["inicio"])
-fin_m_raw  = t2m(turno_cfg["fin"])
+turno_sel = st.selectbox("Turno", list(TURNOS.keys()))
+
+if turno_sel == "Tiempo Extra":
+    col_te1, col_te2 = st.columns(2)
+    with col_te1:
+        te_inicio = st.time_input("Hora de entrada", value=time(6, 0), key="te_inicio")
+    with col_te2:
+        te_fin = st.time_input("Hora de salida", value=time(14, 0), key="te_fin")
+    inicio_m  = t2m(te_inicio)
+    fin_m_raw = t2m(te_fin)
+    if fin_m_raw <= inicio_m:
+        st.error("La hora de salida debe ser después de la hora de entrada.")
+        st.stop()
+else:
+    turno_cfg = TURNOS[turno_sel]
+    inicio_m  = t2m(turno_cfg["inicio"])
+    fin_m_raw = t2m(turno_cfg["fin"])
 
 # Turno C sábado dura 12 horas (12:00am–12:00pm)
 if turno_sel == "Turno C" and es_sabado:
@@ -382,7 +397,7 @@ if st.button("Calcular", type="primary", use_container_width=True):
 st.divider()
 st.subheader("📋 Tabla de planeación")
 
-filas = get_filas_turno(turno_sel, es_sabado)
+filas = get_filas_turno(turno_sel, es_sabado, inicio_m, fin_m)
 
 # ── Selectores de hora para comida y breaks ───────────────────────────────────
 if turno_sel == "Turno C" and es_sabado:
