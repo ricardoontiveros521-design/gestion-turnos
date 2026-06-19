@@ -303,6 +303,67 @@ if st.button("Calcular", type="primary", use_container_width=True):
     else:
         st.warning(situacion)
 
+    # ── Recomendación de cobertura de descansos ──────────────────────────────
+    breaks_restantes = max_breaks - breaks
+    hay_comida = not comio
+    hay_break  = breaks_restantes > 0
+
+    if diferencia < 0 and (hay_comida or hay_break) and min_restantes > 0 and ritmo_real > 0:
+        min_break_disp = breaks_restantes * 15
+        extra_comida = round((ritmo_real / 60) * COMIDA_MIN) if hay_comida else 0
+        extra_break  = round((ritmo_real / 60) * min_break_disp) if hay_break else 0
+
+        proy_comida = proy_real + extra_comida
+        proy_break  = proy_real + extra_break
+
+        st.divider()
+        st.subheader("💡 ¿Cubrir los descansos?")
+
+        ncols = (1 if hay_comida else 0) + (1 if hay_break else 0)
+        cols  = st.columns(ncols)
+        ci = 0
+        if hay_comida:
+            cols[ci].metric(
+                f"Cubriendo comida ({COMIDA_MIN} min)",
+                f"{proy_comida:,} pz",
+                f"+{extra_comida:,} pz",
+                delta_color="off",
+            )
+            ci += 1
+        if hay_break:
+            cols[ci].metric(
+                f"Cubriendo break ({min_break_disp} min)",
+                f"{proy_break:,} pz",
+                f"+{extra_break:,} pz",
+                delta_color="off",
+            )
+
+        for (lbl, meta_v) in metas_pz:
+            if hay_comida and proy_comida >= meta_v:
+                marca = "✅ cubriendo la comida"
+            elif hay_break and proy_break >= meta_v:
+                marca = "⚡ cubriendo el break"
+            else:
+                marca = "❌ no alcanza"
+            st.markdown(f"**{lbl}** → {marca}")
+
+        mejor_comida = next(
+            (lbl for lbl, mv in reversed(metas_pz) if hay_comida and proy_comida >= mv), None
+        )
+        mejor_break = next(
+            (lbl for lbl, mv in reversed(metas_pz) if hay_break and proy_break >= mv), None
+        )
+
+        if mejor_comida:
+            st.success(f"⭐ Cubre la comida → proyectas **{mejor_comida}** ({proy_comida:,} pz)")
+        elif mejor_break:
+            st.warning(
+                f"La comida completa no alcanza al 85%. "
+                f"Al menos cubre el break → proyectas **{mejor_break}** ({proy_break:,} pz)"
+            )
+        else:
+            st.info("Aunque cubras los descansos el turno ya no tiene recuperación. Cada pieza suma.")
+
 # ─── TABLA DE PLANEACIÓN ──────────────────────────────────────────────────────
 
 st.divider()
