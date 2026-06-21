@@ -331,7 +331,7 @@ min_reales_din = duracion_total - AJUSTE_MIN - _paros_din
 if st.button("Calcular", type="primary", use_container_width=True):
 
     ahora         = _ahora
-    hora_actual_m = hora_actual_local
+    hora_actual_m = min(hora_actual_local, fin_m)  # no contar más allá del fin del turno
 
     min_productivos = hora_actual_m - inicio_m - AJUSTE_MIN
     if comio:
