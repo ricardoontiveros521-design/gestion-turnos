@@ -669,10 +669,19 @@ else:
         meta_101_v = metas_ref[3][1]
 
         # ── Línea ideal (columna 100% de la tabla, acumulada) ────────────────
+        # Se insertan puntos planos al inicio de cada slot con paro para que
+        # el valle de la curva coincida exactamente con la zona sombreada.
         ideal_x, ideal_y = [inicio_m], [0]
         t_run, run_100 = inicio_m, 0
-        for row, (_, base_min) in zip(tabla_rows[:-1], filas):
-            t_run  += base_min
+        for idx_i, (row, (_, base_min)) in enumerate(zip(tabla_rows[:-1], filas)):
+            t_slot = t_run
+            paro_ini = (AJUSTE_MIN if idx_i == 0 else 0)
+            paro_ini += COMIDA_MIN if idx_i == hora_comida_idx else 0
+            paro_ini += break_idxs.count(idx_i) * 15
+            if paro_ini > 0:
+                ideal_x.append(t_slot + paro_ini)
+                ideal_y.append(run_100)
+            t_run   += base_min
             run_100 += row[2]
             ideal_x.append(t_run)
             ideal_y.append(run_100)
@@ -773,10 +782,6 @@ else:
             ax.axhline(meta_v, color=color, linewidth=1.0, linestyle="--", alpha=0.75)
             ax.text(fin_m + (fin_m - inicio_m) * 0.01, meta_v,
                     pct, color=color, fontsize=8, va="center", ha="left", fontweight="bold")
-
-        # Turbo (fondo)
-        ax.plot(turbo_x, turbo_y, color="#ffaa00", linewidth=1.0,
-                alpha=0.4, label=f"Turbo ({int(max_real_pzh)} pz/h)")
 
         # Ideal
         ax.plot(ideal_x, ideal_y, color="#4488ff", linewidth=1.5,
