@@ -536,6 +536,8 @@ for idx, (_, base_min) in enumerate(filas):
         m = base_min - comida_ded - break_ded
     pre_minutos.append(max(m, 0))
 
+_meta_t = objetivo_total if objetivo_total > 0 else round((meta_pzh / 60) * min_reales)
+
 if objetivo_total > 0:
     rate_tabla = objetivo_total / sum(pre_minutos) if sum(pre_minutos) > 0 else meta_pzh / 60
 else:
@@ -563,21 +565,21 @@ for idx, (label, base_min) in enumerate(filas):
         round(pz_acum),   # temporal para acumulado
     ])
 
-# Columna de acumulado (running total de 100% sin redistribución)
+# Columna de acumulado — running total; el último slot se ajusta al objetivo
+# exacto para evitar que el redondeo por fila acumule un error de ±1 pieza.
 running = 0
-for row in tabla_rows:
-    running += row[5]   # índice 5 = pz_puro
-    row[5] = running    # reemplazar temporal por acumulado
+for i, row in enumerate(tabla_rows):
+    running += row[5]
+    row[5] = running
+tabla_rows[-1][5] = _meta_t   # fuerza el cierre exacto en el último slot
 
-# Fila de totales — 100% y 101% se calculan desde el objetivo exacto para
-# evitar la acumulación de errores de redondeo por fila.
-_meta_t = objetivo_total if objetivo_total > 0 else round((meta_pzh / 60) * min_reales)
+# Fila de totales — 100%, 101% y Acumulado usan el objetivo exacto.
 totales = ["Total",
            round(_meta_t * 1.01),
            _meta_t,
            sum(r[3] for r in tabla_rows),
            sum(r[4] for r in tabla_rows),
-           running]
+           _meta_t]
 tabla_rows.append(totales)
 
 df_plan = pd.DataFrame(tabla_rows, columns=["Hora", "101%", "100%", "90%", "85%", "Acumulado"])
