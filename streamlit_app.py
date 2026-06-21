@@ -399,6 +399,13 @@ st.subheader("📋 Tabla de planeación")
 
 filas = get_filas_turno(turno_sel, es_sabado, inicio_m, fin_m)
 
+objetivo_total = st.number_input(
+    "🎯 Objetivo total del turno — 100% (deja en 0 para usar meta pz/h automática)",
+    min_value=0, value=0, step=10,
+    help="Útil cuando las decimales no cuadran. Este número se convierte en el 100% y la tabla distribuye de ahí.",
+)
+rate_tabla = (objetivo_total / min_oficiales) if objetivo_total > 0 else (meta_pzh / 60)
+
 # ── Selectores de hora para comida y breaks ───────────────────────────────────
 if turno_sel == "Turno C" and es_sabado:
     # Comida: primeras 6 horas (12am–6am); breaks: últimas 6 horas (6am–12pm)
@@ -455,7 +462,7 @@ else:
 
 # ── Construir y mostrar tabla ─────────────────────────────────────────────────
 n      = len(filas)
-redist = (meta_pzh / 60 * 10) / (n - 1) if n > 1 else 0
+redist = (rate_tabla * 10) / (n - 1) if n > 1 else 0
 
 tabla_rows = []
 for idx, (label, base_min) in enumerate(filas):
@@ -474,8 +481,8 @@ for idx, (label, base_min) in enumerate(filas):
     minutos = max(minutos, 0)
     # Para el acumulado la última hora usa 60 min (sin el -10 de parada anticipada)
     minutos_acum = max(base_min - comida_ded - break_ded, 0) if is_last else minutos
-    pz_acum = (meta_pzh / 60) * minutos_acum
-    base_pz = (meta_pzh / 60) * minutos + (0 if is_last else redist)
+    pz_acum = rate_tabla * minutos_acum
+    base_pz = rate_tabla * minutos + (0 if is_last else redist)
 
     tabla_rows.append([
         label,
@@ -505,7 +512,11 @@ df_plan = pd.DataFrame(tabla_rows, columns=["Hora", "101%", "100%", "90%", "85%"
 
 st.dataframe(df_plan, use_container_width=True, hide_index=True)
 
-titulo_img = f"Tabla de planeación — {turno_sel} · {meta_pzh:.0f} pz/h"
+titulo_img = (
+    f"Tabla de planeación — {turno_sel} · {objetivo_total:,} pz (100%)"
+    if objetivo_total > 0
+    else f"Tabla de planeación — {turno_sel} · {meta_pzh:.0f} pz/h"
+)
 img_buf = tabla_a_png(df_plan, titulo_img)
 st.download_button(
     "📥 Descargar tabla como imagen",
