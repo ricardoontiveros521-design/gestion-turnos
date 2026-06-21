@@ -537,3 +537,241 @@ st.download_button(
     mime="image/png",
     use_container_width=True,
 )
+
+# ─── GRÁFICA DE PRODUCCIÓN ────────────────────────────────────────────────────
+
+import numpy as np
+
+st.divider()
+st.subheader("📈 Gráfica de producción")
+
+hora_actual_local = hora_en_turno(_ahora.hour * 60 + _ahora.minute, inicio_m)
+
+# Rangos de cada slot: inicio acumulado por fila
+slot_starts = []
+t_acc = inicio_m
+for _, base_min in filas:
+    slot_starts.append(t_acc)
+    t_acc += base_min
+
+# Slots que ya comenzaron
+active_slots = [
+    (i, filas[i][0], slot_starts[i], slot_starts[i] + filas[i][1])
+    for i in range(len(filas))
+    if hora_actual_local > slot_starts[i]
+]
+
+if not active_slots:
+    st.info("El turno aún no ha iniciado — la gráfica aparecerá cuando empiece.")
+else:
+    st.markdown("**Piezas producidas por hora:**")
+    ncols = min(4, len(active_slots))
+    grid_cols = st.columns(ncols)
+    piezas_hora = {}
+    for j, (i, label, s_start, s_end) in enumerate(active_slots):
+        es_parcial = hora_actual_local < s_end
+        with grid_cols[j % ncols]:
+            val = st.number_input(
+                label + (" *(en curso)*" if es_parcial else ""),
+                min_value=0, value=0, step=1, key=f"ph_{i}",
+            )
+        mins_slot = max(min(hora_actual_local, s_end) - s_start, 1)
+        piezas_hora[i] = (val, es_parcial, mins_slot)
+
+    hay_datos = any(v > 0 for v, _, _ in piezas_hora.values())
+
+    if not hay_datos:
+        st.caption("Ingresa las piezas de cada hora para ver la gráfica.")
+    else:
+        # ── Metas de referencia ──────────────────────────────────────────────
+        meta_100_v = objetivo_total if objetivo_total > 0 else round((meta_pzh / 60) * min_oficiales)
+        metas_ref = [
+            ("85%",  round(meta_100_v * 0.85), "#666677"),
+            ("90%",  round(meta_100_v * 0.90), "#8888aa"),
+            ("100%", meta_100_v,                "#4488ff"),
+            ("101%", round(meta_100_v * 1.01),  "#ffaa00"),
+        ]
+        meta_101_v = metas_ref[3][1]
+
+        # ── Línea ideal (columna 100% de la tabla, acumulada) ────────────────
+        ideal_x, ideal_y = [inicio_m], [0]
+        t_run, run_100 = inicio_m, 0
+        for row, (_, base_min) in zip(tabla_rows[:-1], filas):
+            t_run  += base_min
+            run_100 += row[2]
+            ideal_x.append(t_run)
+            ideal_y.append(run_100)
+
+        # ── Línea turbo (ritmo máximo real, acumulada) ───────────────────────
+        turbo_x, turbo_y = [inicio_m], [0]
+        t_run, run_turbo = inicio_m, 0
+        for idx_r, (_, base_min) in enumerate(filas):
+            t_run    += base_min
+            run_turbo += round((max_real_pzh / 60) * pre_minutos[idx_r])
+            turbo_x.append(t_run)
+            turbo_y.append(run_turbo)
+
+        # ── Línea real (acumulado hora a hora) ───────────────────────────────
+        real_x, real_y = [inicio_m], [0]
+        run_real = 0
+        for i, _, s_start, s_end in active_slots:
+            val, es_parcial, _ = piezas_hora[i]
+            run_real += val
+            real_x.append(min(hora_actual_local, s_end))
+            real_y.append(run_real)
+        last_x, last_y = real_x[-1], real_y[-1]
+
+        # ── Rate de proyección: parcial > prom últimas 2 > última completada ─
+        completados = [(i, v, pre_minutos[i]) for i, (v, par, _) in piezas_hora.items()
+                       if not par and v > 0]
+        parciales   = [(i, v, m)              for i, (v, par, m) in piezas_hora.items()
+                       if par and v > 0]
+
+        rate_proj = None
+        if parciales:
+            _, v_p, m_p = parciales[-1]
+            rate_proj = (v_p / m_p) * 60 if m_p > 0 else None
+        if rate_proj is None and len(completados) >= 2:
+            last2 = completados[-2:]
+            pz2   = sum(v for _, v, _ in last2)
+            min2  = sum(m for _, _, m in last2)
+            rate_proj = (pz2 / min2) * 60 if min2 > 0 else None
+        if rate_proj is None and completados:
+            _, v_c, m_c = completados[-1]
+            rate_proj = (v_c / m_c) * 60 if m_c > 0 else None
+        if rate_proj is None:
+            rate_proj = meta_pzh
+
+        rate_proj_pm  = rate_proj / 60      # pz/min
+        rate_turbo_pm = max_real_pzh / 60   # pz/min
+
+        # ── Proyecciones hasta 101% o fin de turno ───────────────────────────
+        def proj_line(from_x, from_y, rate_pm, cap_y, end_x):
+            if rate_pm <= 0 or from_y >= cap_y:
+                return [from_x, end_x], [from_y, from_y]
+            mins = (cap_y - from_y) / rate_pm
+            x1   = min(from_x + mins, end_x)
+            y1   = min(from_y + (x1 - from_x) * rate_pm, cap_y)
+            return [from_x, x1], [from_y, y1]
+
+        px_real,  py_real  = proj_line(last_x, last_y, rate_proj_pm,  meta_101_v, fin_m)
+        px_turbo, py_turbo = proj_line(last_x, last_y, rate_turbo_pm, meta_101_v, fin_m)
+
+        # ── ETAs por nivel (dentro del turno) ────────────────────────────────
+        etas_real, etas_turbo = [], []
+        for pct, meta_v, _ in metas_ref:
+            if meta_v > last_y:
+                if rate_proj_pm > 0:
+                    eta = last_x + (meta_v - last_y) / rate_proj_pm
+                    if eta <= fin_m:
+                        etas_real.append((pct, int(eta), meta_v))
+                if rate_turbo_pm > 0:
+                    eta_t = last_x + (meta_v - last_y) / rate_turbo_pm
+                    if eta_t <= fin_m:
+                        etas_turbo.append((pct, int(eta_t), meta_v))
+
+        # ── Gráfica ──────────────────────────────────────────────────────────
+        fig, ax = plt.subplots(figsize=(11, 5))
+        fig.patch.set_facecolor("#0d1117")
+        ax.set_facecolor("#131722")
+
+        # Zonas de descanso
+        ax.axvspan(slot_starts[hora_comida_idx],
+                   slot_starts[hora_comida_idx] + COMIDA_MIN,
+                   color="#1a2a44", alpha=0.7, zorder=0, label="Comida")
+        seen_b = {}
+        for bi in break_idxs:
+            seen_b[bi] = seen_b.get(bi, 0) + 1
+        for bi, cnt in seen_b.items():
+            ax.axvspan(slot_starts[bi], slot_starts[bi] + 15 * cnt,
+                       color="#2a2a10", alpha=0.7, zorder=0, label="Break")
+
+        # Líneas horizontales de referencia
+        for pct, meta_v, color in metas_ref:
+            ax.axhline(meta_v, color=color, linewidth=0.8, linestyle=":", alpha=0.6)
+            ax.text(fin_m + (fin_m - inicio_m) * 0.01, meta_v,
+                    pct, color=color, fontsize=7, va="center", ha="left")
+
+        # Turbo (fondo)
+        ax.plot(turbo_x, turbo_y, color="#ffaa00", linewidth=1.0,
+                alpha=0.4, label=f"Turbo ({int(max_real_pzh)} pz/h)")
+
+        # Ideal
+        ax.plot(ideal_x, ideal_y, color="#4488ff", linewidth=1.5,
+                alpha=0.85, label="Ideal 100%")
+
+        # Área sombreada entre real e ideal
+        rx  = np.array(real_x)
+        ry  = np.array(real_y)
+        iy  = np.interp(rx, ideal_x, ideal_y)
+        ax.fill_between(rx, ry, iy, where=(ry >= iy),
+                        color="#00cc44", alpha=0.18, interpolate=True)
+        ax.fill_between(rx, ry, iy, where=(ry < iy),
+                        color="#ff4444", alpha=0.18, interpolate=True)
+
+        # Real
+        ax.plot(real_x, real_y, color="#ff4444", linewidth=2.5, label="Real")
+        ax.plot(last_x, last_y, "o", color="#ff4444", markersize=7, zorder=5)
+
+        # Proyecciones punteadas
+        ax.plot(px_real,  py_real,  color="#ff7777", linewidth=1.5,
+                linestyle="--", alpha=0.9, label="Proyección actual")
+        ax.plot(px_turbo, py_turbo, color="#ffcc55", linewidth=1.5,
+                linestyle="--", alpha=0.9, label="Proyección turbo")
+
+        # Puntos de ETA en la gráfica (más alto alcanzable de cada proyección)
+        if etas_real:
+            pct, eta_m, meta_v = etas_real[-1]
+            ax.plot(eta_m, meta_v, "o", color="#ff7777", markersize=5, zorder=6)
+            ax.annotate(f"{pct} {m2str(eta_m)}", xy=(eta_m, meta_v),
+                        xytext=(eta_m - (fin_m - inicio_m) * 0.05, meta_v * 1.025),
+                        color="#ff9999", fontsize=6.5, zorder=7,
+                        arrowprops=dict(arrowstyle="-", color="#ff777755", lw=0.8))
+        if etas_turbo:
+            pct, eta_m, meta_v = etas_turbo[-1]
+            ax.plot(eta_m, meta_v, "o", color="#ffcc55", markersize=5, zorder=6)
+            ax.annotate(f"{pct} {m2str(eta_m)}", xy=(eta_m, meta_v),
+                        xytext=(eta_m + (fin_m - inicio_m) * 0.01, meta_v * 0.975),
+                        color="#ffdd88", fontsize=6.5, zorder=7,
+                        arrowprops=dict(arrowstyle="-", color="#ffaa0055", lw=0.8))
+
+        # Ejes
+        tick_step = max(1, len(slot_starts) // 6)
+        ticks_x   = slot_starts[::tick_step]
+        if fin_m not in ticks_x:
+            ticks_x = list(ticks_x) + [fin_m]
+        ax.set_xticks(ticks_x)
+        ax.set_xticklabels([m2str(x) for x in ticks_x],
+                           color="#aaaaaa", fontsize=7, rotation=30, ha="right")
+        ax.set_xlim(inicio_m - 3, fin_m + (fin_m - inicio_m) * 0.08)
+        ax.set_ylim(0, meta_101_v * 1.08)
+        ax.set_yticks([m[1] for m in metas_ref])
+        ax.set_yticklabels([f"{m[1]:,}" for m in metas_ref],
+                           color="#aaaaaa", fontsize=7)
+        ax.tick_params(colors="#333344", length=3)
+        for sp in ax.spines.values():
+            sp.set_edgecolor("#222233")
+
+        ax.legend(loc="upper left", fontsize=7, facecolor="#1a1a2e",
+                  labelcolor="white", framealpha=0.75, edgecolor="#333344",
+                  ncol=2)
+        ax.set_title("Producción acumulada en el turno", color="white",
+                     fontsize=10, pad=8)
+
+        plt.tight_layout()
+        st.pyplot(fig)
+        plt.close(fig)
+
+        # ── Resumen de ETAs ──────────────────────────────────────────────────
+        if etas_real or etas_turbo:
+            col_e1, col_e2 = st.columns(2)
+            with col_e1:
+                if etas_real:
+                    st.markdown(f"**🔴 Al ritmo actual ({rate_proj:.0f} pz/h):**")
+                    for pct, eta_m, _ in etas_real:
+                        st.markdown(f"- {pct} → ~{m2str(eta_m)}")
+            with col_e2:
+                if etas_turbo:
+                    st.markdown(f"**🟡 Al turbo ({int(max_real_pzh)} pz/h):**")
+                    for pct, eta_m, _ in etas_turbo:
+                        st.markdown(f"- {pct} → ~{m2str(eta_m)}")
