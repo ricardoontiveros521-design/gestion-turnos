@@ -290,6 +290,17 @@ for _bm in hora_breaks_m:
         _breaks_lbl.append(f"⏳ break {m2str(_bm)}–{m2str(_bf)}")
 st.caption(" · ".join([_comida_lbl] + _breaks_lbl))
 
+# Validar que los paros caigan dentro del rango del turno
+_fin_turno_m = inicio_m + duracion_total
+_fuera = []
+if not (inicio_m <= hora_comida_m < _fin_turno_m):
+    _fuera.append(f"comida {m2str(hora_comida_m)} — ¿olvidaste cambiar AM/PM?")
+for _bm in hora_breaks_m:
+    if not (inicio_m <= _bm < _fin_turno_m):
+        _fuera.append(f"break {m2str(_bm)} — ¿olvidaste cambiar AM/PM?")
+if _fuera:
+    st.warning("⚠️ Hora fuera del turno: " + " · ".join(_fuera))
+
 piezas = int(st.number_input("Piezas que llevan", min_value=0, value=0, step=1))
 
 # ── Derivar índices de slot e indicadores de tiempo ──────────────────────────
