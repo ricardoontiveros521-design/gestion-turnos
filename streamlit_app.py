@@ -550,10 +550,9 @@ for idx, (label, base_min) in enumerate(filas):
     comida_ded = COMIDA_MIN if idx == hora_comida_idx else 0
     break_ded  = break_idxs.count(idx) * 15
 
-    minutos      = pre_minutos[idx]
-    minutos_acum = max(base_min - comida_ded - break_ded, 0) if is_last else minutos
-    pz_acum      = rate_tabla * minutos_acum
-    base_pz      = rate_tabla * minutos + (0 if is_last else redist)
+    minutos = pre_minutos[idx]
+    pz_acum = rate_tabla * minutos
+    base_pz = rate_tabla * minutos + (0 if is_last else redist)
 
     tabla_rows.append([
         label,
