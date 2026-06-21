@@ -760,7 +760,20 @@ else:
 
         plt.tight_layout()
         st.pyplot(fig)
+
+        buf_graf = io.BytesIO()
+        fig.savefig(buf_graf, format="png", dpi=150, bbox_inches="tight",
+                    facecolor=fig.get_facecolor())
+        buf_graf.seek(0)
         plt.close(fig)
+
+        st.download_button(
+            "📥 Descargar gráfica como imagen",
+            data=buf_graf,
+            file_name="grafica_produccion.png",
+            mime="image/png",
+            use_container_width=True,
+        )
 
         # ── Resumen de ETAs ──────────────────────────────────────────────────
         if etas_real or etas_turbo:
