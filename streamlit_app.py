@@ -235,7 +235,9 @@ if st.button("Calcular", type="primary", use_container_width=True):
     proy_meta     = round(piezas + (meta_pzh     / 60) * min_restantes)
     proy_turbo    = round(piezas + (max_real_pzh / 60) * min_restantes)
 
-    metas_pz   = [(lbl, round((meta_pzh / 60) * min_oficiales * pct)) for lbl, pct in INDICADORES]
+    _obj_ss  = int(st.session_state.get("objetivo_total_input") or 0)
+    meta_base = _obj_ss if _obj_ss > 0 else round((meta_pzh / 60) * min_reales)
+    metas_pz  = [(lbl, round(meta_base * pct)) for lbl, pct in INDICADORES]
     estados    = [get_estado(piezas, proy_real, proy_turbo, m) for _, m in metas_pz]
     faltan     = [max(m - piezas, 0) for _, m in metas_pz]
     ritmos_nec = [
@@ -449,6 +451,7 @@ objetivo_total = st.number_input(
     "🎯 Objetivo total del turno — 100% (deja en 0 para usar meta pz/h automática)",
     min_value=0, value=0, step=10,
     help="Útil cuando las decimales no cuadran. Este número se convierte en el 100% y la tabla distribuye de ahí.",
+    key="objetivo_total_input",
 )
 
 # ── Selectores de hora para comida y breaks ───────────────────────────────────
@@ -521,14 +524,12 @@ for idx, (_, base_min) in enumerate(filas):
         m = base_min - comida_ded - break_ded
     pre_minutos.append(max(m, 0))
 
-# Rate correcto: si hay objetivo, dividir entre los minutos reales de la tabla
-# (+10 porque redist redistribuye los 10 min de arranque a las otras filas)
 if objetivo_total > 0:
-    rate_tabla = objetivo_total / (sum(pre_minutos) + 10)
+    rate_tabla = objetivo_total / sum(pre_minutos) if sum(pre_minutos) > 0 else meta_pzh / 60
 else:
     rate_tabla = meta_pzh / 60
 
-redist = (rate_tabla * 10) / (n - 1) if n > 1 else 0
+redist = 0
 
 tabla_rows = []
 for idx, (label, base_min) in enumerate(filas):
@@ -638,7 +639,7 @@ else:
         st.caption("Ingresa las piezas de cada hora para ver la gráfica.")
     else:
         # ── Metas de referencia ──────────────────────────────────────────────
-        meta_100_v = objetivo_total if objetivo_total > 0 else round((meta_pzh / 60) * min_oficiales)
+        meta_100_v = objetivo_total if objetivo_total > 0 else round((meta_pzh / 60) * min_reales)
         metas_ref = [
             ("85%",  round(meta_100_v * 0.85), "#666677"),
             ("90%",  round(meta_100_v * 0.90), "#8888aa"),
