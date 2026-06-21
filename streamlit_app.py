@@ -250,20 +250,31 @@ if st.button("Calcular", type="primary", use_container_width=True):
         _slot_starts_b.append(_t_b)
         _t_b += _bm
 
+    # helper: session_state puede devolver None al cambiar turno → forzar int
+    def _ss_idx(key, n_slots):
+        v = st.session_state.get(key)
+        try:
+            v = int(v)
+        except (TypeError, ValueError):
+            v = 0
+        return max(0, min(v, n_slots - 1)) if n_slots > 0 else 0
+
+    n_slots_b = len(_slot_starts_b)
+
     # ¿La franja de comida aún no terminó?
-    _comida_ss_b  = st.session_state.get("hora_comida_tabla", 0)
-    _comida_ini_b = _slot_starts_b[_comida_ss_b] if _comida_ss_b < len(_slot_starts_b) else inicio_m
+    _comida_ss_b   = _ss_idx("hora_comida_tabla", n_slots_b)
+    _comida_ini_b  = _slot_starts_b[_comida_ss_b] if n_slots_b > 0 else inicio_m
     _comida_futura = not comio and hora_actual_m < (_comida_ini_b + COMIDA_MIN)
 
     # ¿Cuántos slots de break aún no terminaron?
     if max_breaks == 2:
-        _bss_b = [st.session_state.get("hora_break1_tabla", len(_slot_starts_b) // 2),
-                  st.session_state.get("hora_break2_tabla", len(_slot_starts_b) // 2)]
+        _bss_b = [_ss_idx("hora_break1_tabla", n_slots_b),
+                  _ss_idx("hora_break2_tabla", n_slots_b)]
     else:
-        _bss_b = [st.session_state.get("hora_break_tabla", len(_slot_starts_b) // 2)]
+        _bss_b = [_ss_idx("hora_break_tabla", n_slots_b)]
     _breaks_cb = min(
         max_breaks - breaks,
-        sum(1 for _bi in _bss_b if _bi < len(_slot_starts_b) and hora_actual_m < _slot_starts_b[_bi] + 15),
+        sum(1 for _bi in _bss_b if hora_actual_m < _slot_starts_b[_bi] + 15),
     )
 
     clock_bf = (COMIDA_MIN if _comida_futura else 0) + _breaks_cb * 15
