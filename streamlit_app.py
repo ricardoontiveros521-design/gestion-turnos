@@ -201,58 +201,77 @@ with col2:
 if max_real_pzh < meta_pzh:
     st.warning(f"El máximo real ({max_real_pzh:.0f}) es menor a la meta ({meta_pzh:.0f}). Verifica los datos.")
 
-# ── Paros: hora de comida y breaks ───────────────────────────────────────────
-# El sistema coteja la hora elegida con la hora actual para determinar
-# automáticamente si ya pasó (comio / breaks) y cuánto tiempo queda.
+# ── Paros: selector de hora 12h con AM/PM ────────────────────────────────────
 hora_actual_local = hora_en_turno(_ahora.hour * 60 + _ahora.minute, inicio_m)
 
-def _m2t(m):
-    return time(int(m // 60) % 24, int(m % 60))
+def _hora_picker(label, default_m, key):
+    """
+    Selector de hora en formato 12h (1-12 + AM/PM) con minutos cada 15 min.
+    Devuelve minutos desde medianoche (0-1439).
+    """
+    dm   = int(default_m) % 1440
+    h24  = dm // 60
+    mm   = dm % 60
+    h12  = h24 % 12 or 12            # 0 → 12, 13 → 1
+    ap0  = 1 if h24 >= 12 else 0     # 0 = AM, 1 = PM
+    mm_i = min(range(4), key=lambda i: abs([0, 15, 30, 45][i] - mm))
+
+    st.markdown(f"**{label}**")
+    ch, cm, cap = st.columns([2, 2, 3])
+    with ch:
+        h = st.selectbox(
+            "h", list(range(1, 13)), index=h12 - 1,
+            key=f"{key}_h", label_visibility="collapsed",
+        )
+    with cm:
+        m = st.selectbox(
+            "m", [0, 15, 30, 45], index=mm_i,
+            format_func=lambda x: f":{x:02d}",
+            key=f"{key}_m", label_visibility="collapsed",
+        )
+    with cap:
+        ap = st.radio(
+            "ap", ["AM", "PM"], index=ap0, horizontal=True,
+            key=f"{key}_ap", label_visibility="collapsed",
+        )
+    return (h % 12 + (12 if ap == "PM" else 0)) * 60 + m
 
 if max_breaks == 0:
-    hora_comida_input = st.time_input(
-        "⏰ Hora de comida",
-        value=_m2t((inicio_m + duracion_total // 3) % 1440),
-        help=f"El sistema suma {COMIDA_MIN} min — se detecta automáticamente si ya pasó.",
+    hora_comida_m_raw = _hora_picker(
+        "⏰ Comida", (inicio_m + duracion_total // 3) % 1440, "comida",
     )
     hora_breaks_m = []
 elif max_breaks == 1:
-    _col_c, _col_b = st.columns(2)
-    with _col_c:
-        hora_comida_input = st.time_input(
-            "⏰ Hora de comida",
-            value=_m2t((inicio_m + duracion_total // 3) % 1440),
+    _oc, _ob = st.columns(2)
+    with _oc:
+        hora_comida_m_raw = _hora_picker(
+            "⏰ Comida", (inicio_m + duracion_total // 3) % 1440, "comida",
         )
-    with _col_b:
-        hora_break_input = st.time_input(
-            "⏰ Hora de break",
-            value=_m2t((inicio_m + duracion_total * 2 // 3) % 1440),
-            help="El sistema suma 15 min — se detecta si ya pasó.",
+    with _ob:
+        _br_raw = _hora_picker(
+            "⏰ Break", (inicio_m + duracion_total * 2 // 3) % 1440, "break1",
         )
-    hora_breaks_m = [hora_en_turno(hora_break_input.hour * 60 + hora_break_input.minute, inicio_m)]
+    hora_breaks_m = [hora_en_turno(_br_raw, inicio_m)]
 else:  # max_breaks == 2
-    _col_c, _col_b1, _col_b2 = st.columns(3)
-    with _col_c:
-        hora_comida_input = st.time_input(
-            "⏰ Hora de comida",
-            value=_m2t((inicio_m + duracion_total // 3) % 1440),
+    _oc, _ob1, _ob2 = st.columns(3)
+    with _oc:
+        hora_comida_m_raw = _hora_picker(
+            "⏰ Comida", (inicio_m + duracion_total // 3) % 1440, "comida",
         )
-    with _col_b1:
-        hora_break1_input = st.time_input(
-            "⏰ Break 1",
-            value=_m2t((inicio_m + duracion_total * 3 // 5) % 1440),
+    with _ob1:
+        _br1_raw = _hora_picker(
+            "⏰ Break 1", (inicio_m + duracion_total * 3 // 5) % 1440, "break1",
         )
-    with _col_b2:
-        hora_break2_input = st.time_input(
-            "⏰ Break 2",
-            value=_m2t((inicio_m + duracion_total * 4 // 5) % 1440),
+    with _ob2:
+        _br2_raw = _hora_picker(
+            "⏰ Break 2", (inicio_m + duracion_total * 4 // 5) % 1440, "break2",
         )
     hora_breaks_m = [
-        hora_en_turno(hora_break1_input.hour * 60 + hora_break1_input.minute, inicio_m),
-        hora_en_turno(hora_break2_input.hour * 60 + hora_break2_input.minute, inicio_m),
+        hora_en_turno(_br1_raw, inicio_m),
+        hora_en_turno(_br2_raw, inicio_m),
     ]
 
-hora_comida_m = hora_en_turno(hora_comida_input.hour * 60 + hora_comida_input.minute, inicio_m)
+hora_comida_m = hora_en_turno(hora_comida_m_raw, inicio_m)
 comio  = hora_actual_local >= hora_comida_m + COMIDA_MIN
 breaks = sum(1 for bm in hora_breaks_m if hora_actual_local >= bm + 15)
 
