@@ -314,7 +314,7 @@ _breaks_futuros = sum(1 for bm in hora_breaks_m if hora_actual_local < bm + 15)
 clock_bf       = (COMIDA_MIN if _comida_futura else 0) + _breaks_futuros * 15
 _paros_din     = ((COMIDA_MIN if comio else 0) + breaks * 15
                   + (COMIDA_MIN if _comida_futura else 0) + _breaks_futuros * 15)
-min_reales_din = duracion_total - 2 * AJUSTE_MIN - _paros_din
+min_reales_din = duracion_total - AJUSTE_MIN - _paros_din
 
 # ── Calcular ─────────────────────────────────────────────────────────────────
 if st.button("Calcular", type="primary", use_container_width=True):
@@ -338,7 +338,7 @@ if st.button("Calcular", type="primary", use_container_width=True):
     proy_turbo    = round(piezas + (max_real_pzh / 60) * min_restantes)
 
     _obj_ss  = int(st.session_state.get("objetivo_total_input") or 0)
-    meta_base = _obj_ss if _obj_ss > 0 else round((meta_pzh / 60) * min_reales)
+    meta_base = _obj_ss if _obj_ss > 0 else round((meta_pzh / 60) * min_oficiales)
     metas_pz  = [(lbl, round(meta_base * pct)) for lbl, pct in INDICADORES]
     estados    = [get_estado(piezas, proy_real, proy_turbo, m) for _, m in metas_pz]
     faltan     = [max(m - piezas, 0) for _, m in metas_pz]
@@ -536,7 +536,7 @@ for idx, (_, base_min) in enumerate(filas):
         m = base_min - comida_ded - break_ded
     pre_minutos.append(max(m, 0))
 
-_meta_t = objetivo_total if objetivo_total > 0 else round((meta_pzh / 60) * min_reales)
+_meta_t = objetivo_total if objetivo_total > 0 else round((meta_pzh / 60) * min_oficiales)
 
 if objetivo_total > 0:
     rate_tabla = objetivo_total / sum(pre_minutos) if sum(pre_minutos) > 0 else meta_pzh / 60
