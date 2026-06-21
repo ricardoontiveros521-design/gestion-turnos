@@ -2,6 +2,7 @@ import streamlit as st
 from datetime import datetime, time, timezone, timedelta
 import pandas as pd
 import matplotlib.pyplot as plt
+import numpy as np
 import io
 
 # ─── CONSTANTES ───────────────────────────────────────────────────────────────
@@ -137,7 +138,11 @@ utc_offset = st.sidebar.number_input(
 )
 _tz    = timezone(timedelta(hours=utc_offset))
 _ahora = datetime.now(_tz)
-es_sabado = _ahora.weekday() == 5
+_es_sabado_auto = _ahora.weekday() == 5
+es_sabado = st.sidebar.checkbox(
+    "¿Es sábado?", value=_es_sabado_auto,
+    help="Se detecta automáticamente. Actívalo manualmente si el turno cruzó medianoche.",
+)
 
 st.sidebar.caption(f"Hora local detectada: **{_ahora.strftime('%H:%M')}**")
 
@@ -167,8 +172,16 @@ if turno_sel == "Turno C" and es_sabado:
 fin_m      = fin_ajustado(inicio_m, fin_m_raw)
 fin_real_m = fin_m - AJUSTE_MIN
 
+# max_breaks se define aquí para que min_oficiales pueda descontarlos
+if turno_sel == "Turno C":
+    max_breaks = 2 if es_sabado else 0
+else:
+    max_breaks = 1
+
+filas = get_filas_turno(turno_sel, es_sabado, inicio_m, fin_m)
+
 duracion_total = fin_m - inicio_m
-min_oficiales  = duracion_total - AJUSTE_MIN - COMIDA_MIN
+min_oficiales  = duracion_total - AJUSTE_MIN - COMIDA_MIN - max_breaks * 15
 min_reales     = min_oficiales  - AJUSTE_MIN
 
 st.caption(
@@ -189,11 +202,6 @@ if max_real_pzh < meta_pzh:
     st.warning(f"El máximo real ({max_real_pzh:.0f}) es menor a la meta ({meta_pzh:.0f}). Verifica los datos.")
 
 # ── Descansos ────────────────────────────────────────────────────────────────
-if turno_sel == "Turno C":
-    max_breaks = 2 if es_sabado else 0
-else:
-    max_breaks = 1
-
 col3, col4 = st.columns(2)
 with col3:
     comio = st.checkbox("¿Ya comiste?")
@@ -235,7 +243,30 @@ if st.button("Calcular", type="primary", use_container_width=True):
         for f in faltan
     ]
 
-    clock_bf = (COMIDA_MIN if not comio else 0) + (max_breaks - breaks) * 15
+    # Inicio de cada slot (filas ya está definido antes del botón)
+    _slot_starts_b = []
+    _t_b = inicio_m
+    for _, _bm in filas:
+        _slot_starts_b.append(_t_b)
+        _t_b += _bm
+
+    # ¿La franja de comida aún no terminó?
+    _comida_ss_b  = st.session_state.get("hora_comida_tabla", 0)
+    _comida_ini_b = _slot_starts_b[_comida_ss_b] if _comida_ss_b < len(_slot_starts_b) else inicio_m
+    _comida_futura = not comio and hora_actual_m < (_comida_ini_b + COMIDA_MIN)
+
+    # ¿Cuántos slots de break aún no terminaron?
+    if max_breaks == 2:
+        _bss_b = [st.session_state.get("hora_break1_tabla", len(_slot_starts_b) // 2),
+                  st.session_state.get("hora_break2_tabla", len(_slot_starts_b) // 2)]
+    else:
+        _bss_b = [st.session_state.get("hora_break_tabla", len(_slot_starts_b) // 2)]
+    _breaks_cb = min(
+        max_breaks - breaks,
+        sum(1 for _bi in _bss_b if _bi < len(_slot_starts_b) and hora_actual_m < _slot_starts_b[_bi] + 15),
+    )
+
+    clock_bf = (COMIDA_MIN if _comida_futura else 0) + _breaks_cb * 15
 
     eta_real_list, eta_turbo_list = [], []
     for f in faltan:
@@ -334,102 +365,74 @@ if st.button("Calcular", type="primary", use_container_width=True):
     # ── Recomendación de cobertura de descansos ──────────────────────────────
     meta_101 = metas_pz[-1][1]
 
-    breaks_restantes = max_breaks - breaks
-
-    # Calcular el inicio de cada slot para verificar si ya pasó su hora
-    _filas_rec   = get_filas_turno(turno_sel, es_sabado, inicio_m, fin_m)
-    _slot_starts = []
-    _t = inicio_m
-    for _, _bm in _filas_rec:
-        _slot_starts.append(_t)
-        _t += _bm
-
-    # Comida: solo recomendar si el slot de comida aún no terminó
-    _comida_ss  = st.session_state.get("hora_comida_tabla", 0)
-    _comida_ini = _slot_starts[_comida_ss] if _comida_ss < len(_slot_starts) else inicio_m
-    hay_comida  = not comio and hora_actual_m < (_comida_ini + COMIDA_MIN)
-
-    # Breaks: solo recomendar si hay breaks sin tomar Y algún slot de break aún no pasó
-    if breaks_restantes > 0:
-        if max_breaks == 2:
-            _bss = [
-                st.session_state.get("hora_break1_tabla", len(_slot_starts) // 2),
-                st.session_state.get("hora_break2_tabla", len(_slot_starts) // 2),
-            ]
-        else:
-            _bss = [st.session_state.get("hora_break_tabla", len(_slot_starts) // 2)]
-        _breaks_futuros = sum(
-            1 for _bi in _bss
-            if _bi < len(_slot_starts) and hora_actual_m < _slot_starts[_bi] + 15
-        )
-        hay_break      = _breaks_futuros > 0
-        min_break_disp = min(breaks_restantes, _breaks_futuros) * 15
-    else:
-        hay_break      = False
-        min_break_disp = 0
+    # Reutiliza los checks de timing ya calculados para clock_bf
+    hay_comida     = _comida_futura
+    hay_break      = _breaks_cb > 0
+    min_break_disp = _breaks_cb * 15
 
     if proy_real < meta_101 and (hay_comida or hay_break) and min_restantes > 0 and ritmo_real > 0:
         extra_comida = round((ritmo_real / 60) * COMIDA_MIN) if hay_comida else 0
         extra_break  = round((ritmo_real / 60) * min_break_disp) if hay_break else 0
 
-        # Tope en 101%
-        proy_comida = min(proy_real + extra_comida, meta_101)
-        proy_break  = min(proy_real + extra_break,  meta_101)
-
-        st.divider()
-        st.subheader("💡 ¿Cubrir los descansos?")
-
-        ncols = (1 if hay_comida else 0) + (1 if hay_break else 0)
-        cols  = st.columns(ncols)
-        ci = 0
-        if hay_comida:
-            cols[ci].metric(
-                f"Cubriendo comida ({COMIDA_MIN} min)",
-                f"{proy_comida:,} pz",
-                f"+{extra_comida:,} pz",
-                delta_color="off",
-            )
-            ci += 1
-        if hay_break:
-            cols[ci].metric(
-                f"Cubriendo break ({min_break_disp} min)",
-                f"{proy_break:,} pz",
-                f"+{extra_break:,} pz",
-                delta_color="off",
-            )
-
-        for (lbl, meta_v) in metas_pz:
-            if hay_comida and proy_comida >= meta_v:
-                marca = "✅ cubriendo la comida"
-            elif hay_break and proy_break >= meta_v:
-                marca = "⚡ cubriendo el break"
-            else:
-                marca = "❌ no alcanza"
-            st.markdown(f"**{lbl}** → {marca}")
-
-        mejor_comida = next(
-            (lbl for lbl, mv in reversed(metas_pz) if hay_comida and proy_comida >= mv), None
-        )
-        mejor_break = next(
-            (lbl for lbl, mv in reversed(metas_pz) if hay_break and proy_break >= mv), None
-        )
-
-        if mejor_comida:
-            st.success(f"⭐ Cubre la comida → proyectas **{mejor_comida}** ({proy_comida:,} pz)")
-        elif mejor_break:
-            st.warning(
-                f"La comida completa no alcanza al 85%. "
-                f"Al menos cubre el break → proyectas **{mejor_break}** ({proy_break:,} pz)"
-            )
+        if extra_comida == 0 and extra_break == 0:
+            pass  # ritmo tan bajo que cubrir los descansos no suma ni 1 pieza
         else:
-            st.info("Aunque cubras los descansos el turno ya no tiene recuperación. Cada pieza suma.")
+            # Tope en 101%
+            proy_comida = min(proy_real + extra_comida, meta_101)
+            proy_break  = min(proy_real + extra_break,  meta_101)
+
+            st.divider()
+            st.subheader("💡 ¿Cubrir los descansos?")
+
+            ncols = (1 if hay_comida else 0) + (1 if hay_break else 0)
+            cols  = st.columns(ncols)
+            ci = 0
+            if hay_comida:
+                cols[ci].metric(
+                    f"Cubriendo comida ({COMIDA_MIN} min)",
+                    f"{proy_comida:,} pz",
+                    f"+{extra_comida:,} pz",
+                    delta_color="off",
+                )
+                ci += 1
+            if hay_break:
+                cols[ci].metric(
+                    f"Cubriendo break ({min_break_disp} min)",
+                    f"{proy_break:,} pz",
+                    f"+{extra_break:,} pz",
+                    delta_color="off",
+                )
+
+            for (lbl, meta_v) in metas_pz:
+                if hay_comida and proy_comida >= meta_v:
+                    marca = "✅ cubriendo la comida"
+                elif hay_break and proy_break >= meta_v:
+                    marca = "⚡ cubriendo el break"
+                else:
+                    marca = "❌ no alcanza"
+                st.markdown(f"**{lbl}** → {marca}")
+
+            mejor_comida = next(
+                (lbl for lbl, mv in reversed(metas_pz) if hay_comida and proy_comida >= mv), None
+            )
+            mejor_break = next(
+                (lbl for lbl, mv in reversed(metas_pz) if hay_break and proy_break >= mv), None
+            )
+
+            if mejor_comida:
+                st.success(f"⭐ Cubre la comida → proyectas **{mejor_comida}** ({proy_comida:,} pz)")
+            elif mejor_break:
+                st.warning(
+                    f"La comida completa no alcanza al 85%. "
+                    f"Al menos cubre el break → proyectas **{mejor_break}** ({proy_break:,} pz)"
+                )
+            else:
+                st.info("Aunque cubras los descansos el turno ya no tiene recuperación. Cada pieza suma.")
 
 # ─── TABLA DE PLANEACIÓN ──────────────────────────────────────────────────────
 
 st.divider()
 st.subheader("📋 Tabla de planeación")
-
-filas = get_filas_turno(turno_sel, es_sabado, inicio_m, fin_m)
 
 objetivo_total = st.number_input(
     "🎯 Objetivo total del turno — 100% (deja en 0 para usar meta pz/h automática)",
@@ -572,8 +575,6 @@ st.download_button(
 
 # ─── GRÁFICA DE PRODUCCIÓN ────────────────────────────────────────────────────
 
-import numpy as np
-
 st.divider()
 st.subheader("📈 Gráfica de producción")
 
@@ -609,6 +610,14 @@ else:
             )
         mins_slot = max(min(hora_actual_local, s_end) - s_start, 1)
         piezas_hora[i] = (val, es_parcial, mins_slot)
+
+    suma_horas = sum(v for v, _, _ in piezas_hora.values())
+    st.caption(f"Total ingresado en horas: **{suma_horas:,} pz**")
+    if piezas > 0 and suma_horas != piezas:
+        st.warning(
+            f"⚠️ La suma por hora ({suma_horas:,} pz) ≠ 'Piezas que llevan' ({piezas:,} pz). "
+            f"Los indicadores usan el total; la gráfica usa las horas."
+        )
 
     hay_datos = any(v > 0 for v, _, _ in piezas_hora.values())
 
@@ -751,6 +760,12 @@ else:
         # Real
         ax.plot(real_x, real_y, color="#ff4444", linewidth=2.5, label="Real")
         ax.plot(last_x, last_y, "o", color="#ff4444", markersize=7, zorder=5)
+
+        # Línea vertical de hora actual
+        ax.axvline(hora_actual_local, color="#ffffff", linewidth=1.0,
+                   linestyle=":", alpha=0.45, zorder=3)
+        ax.text(hora_actual_local, meta_101_v * 1.05, m2str(hora_actual_local),
+                color="#aaaaaa", fontsize=7, ha="center", va="bottom")
 
         # Proyecciones punteadas
         ax.plot(px_real,  py_real,  color="#ff7777", linewidth=1.5,
