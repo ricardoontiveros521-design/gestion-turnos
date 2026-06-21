@@ -201,59 +201,100 @@ with col2:
 if max_real_pzh < meta_pzh:
     st.warning(f"El máximo real ({max_real_pzh:.0f}) es menor a la meta ({meta_pzh:.0f}). Verifica los datos.")
 
-# ── Descansos ────────────────────────────────────────────────────────────────
-col3, col4 = st.columns(2)
-with col3:
-    comio = st.checkbox("¿Ya comiste?")
-with col4:
-    if max_breaks == 0:
-        st.caption("Sin breaks en este turno")
-        breaks = 0
+# ── Paros: hora de comida y breaks ───────────────────────────────────────────
+# El sistema coteja la hora elegida con la hora actual para determinar
+# automáticamente si ya pasó (comio / breaks) y cuánto tiempo queda.
+hora_actual_local = hora_en_turno(_ahora.hour * 60 + _ahora.minute, inicio_m)
+
+def _m2t(m):
+    return time(int(m // 60) % 24, int(m % 60))
+
+if max_breaks == 0:
+    hora_comida_input = st.time_input(
+        "⏰ Hora de comida",
+        value=_m2t((inicio_m + duracion_total // 3) % 1440),
+        help=f"El sistema suma {COMIDA_MIN} min — se detecta automáticamente si ya pasó.",
+    )
+    hora_breaks_m = []
+elif max_breaks == 1:
+    _col_c, _col_b = st.columns(2)
+    with _col_c:
+        hora_comida_input = st.time_input(
+            "⏰ Hora de comida",
+            value=_m2t((inicio_m + duracion_total // 3) % 1440),
+        )
+    with _col_b:
+        hora_break_input = st.time_input(
+            "⏰ Hora de break",
+            value=_m2t((inicio_m + duracion_total * 2 // 3) % 1440),
+            help="El sistema suma 15 min — se detecta si ya pasó.",
+        )
+    hora_breaks_m = [hora_en_turno(hora_break_input.hour * 60 + hora_break_input.minute, inicio_m)]
+else:  # max_breaks == 2
+    _col_c, _col_b1, _col_b2 = st.columns(3)
+    with _col_c:
+        hora_comida_input = st.time_input(
+            "⏰ Hora de comida",
+            value=_m2t((inicio_m + duracion_total // 3) % 1440),
+        )
+    with _col_b1:
+        hora_break1_input = st.time_input(
+            "⏰ Break 1",
+            value=_m2t((inicio_m + duracion_total * 3 // 5) % 1440),
+        )
+    with _col_b2:
+        hora_break2_input = st.time_input(
+            "⏰ Break 2",
+            value=_m2t((inicio_m + duracion_total * 4 // 5) % 1440),
+        )
+    hora_breaks_m = [
+        hora_en_turno(hora_break1_input.hour * 60 + hora_break1_input.minute, inicio_m),
+        hora_en_turno(hora_break2_input.hour * 60 + hora_break2_input.minute, inicio_m),
+    ]
+
+hora_comida_m = hora_en_turno(hora_comida_input.hour * 60 + hora_comida_input.minute, inicio_m)
+comio  = hora_actual_local >= hora_comida_m + COMIDA_MIN
+breaks = sum(1 for bm in hora_breaks_m if hora_actual_local >= bm + 15)
+
+# Estado visual de cada paro
+_comida_fin = hora_comida_m + COMIDA_MIN
+_comida_lbl = (f"✅ comida {m2str(hora_comida_m)}–{m2str(_comida_fin)}" if comio
+               else f"⏳ comida {m2str(hora_comida_m)}–{m2str(_comida_fin)}")
+_breaks_lbl = []
+for _bm in hora_breaks_m:
+    _bf = _bm + 15
+    if hora_actual_local >= _bf:
+        _breaks_lbl.append(f"✅ break {m2str(_bm)}–{m2str(_bf)}")
+    elif hora_actual_local >= _bm:
+        _breaks_lbl.append(f"🔄 break {m2str(_bm)}–{m2str(_bf)} (en curso)")
     else:
-        breaks = st.selectbox("¿Cuántos breaks tomaste?", list(range(max_breaks + 1)))
+        _breaks_lbl.append(f"⏳ break {m2str(_bm)}–{m2str(_bf)}")
+st.caption(" · ".join([_comida_lbl] + _breaks_lbl))
 
 piezas = int(st.number_input("Piezas que llevan", min_value=0, value=0, step=1))
 
-# ── Tiempo actual y franja de paros ──────────────────────────────────────────
-# Se computa aquí (fuera del botón) para que tanto el botón como la gráfica
-# usen la misma fuente de verdad y min_reales_din sea correcto.
-hora_actual_local = hora_en_turno(_ahora.hour * 60 + _ahora.minute, inicio_m)
-
+# ── Derivar índices de slot e indicadores de tiempo ──────────────────────────
 _slot_starts = []
 _t = inicio_m
 for _, _bm in filas:
     _slot_starts.append(_t)
     _t += _bm
-_n_slots = len(_slot_starts)
 
-def _ss_idx(key, n_slots):
-    v = st.session_state.get(key)
-    try:
-        v = int(v)
-    except (TypeError, ValueError):
-        v = 0
-    return max(0, min(v, n_slots - 1)) if n_slots > 0 else 0
+def _find_slot(t_m):
+    for i, (_s, (_, _d)) in enumerate(zip(_slot_starts, filas)):
+        if _s <= t_m < _s + _d:
+            return i
+    return max(0, len(filas) - 1)
 
-_comida_ss     = _ss_idx("hora_comida_tabla", _n_slots)
-_comida_ini    = _slot_starts[_comida_ss] if _n_slots > 0 else inicio_m
-_comida_futura = not comio and hora_actual_local < (_comida_ini + COMIDA_MIN)
+hora_comida_idx = _find_slot(hora_comida_m)
+break_idxs      = [_find_slot(bm) for bm in hora_breaks_m]
 
-if max_breaks == 2:
-    _bss = [_ss_idx("hora_break1_tabla", _n_slots),
-            _ss_idx("hora_break2_tabla", _n_slots)]
-else:
-    _bss = [_ss_idx("hora_break_tabla", _n_slots)]
-_breaks_futuros = min(
-    max_breaks - breaks,
-    sum(1 for _bi in _bss if hora_actual_local < _slot_starts[_bi] + 15),
-)
+_comida_futura  = not comio
+_breaks_futuros = sum(1 for bm in hora_breaks_m if hora_actual_local < bm + 15)
 
-clock_bf = (COMIDA_MIN if _comida_futura else 0) + _breaks_futuros * 15
-
-# min_reales dinámico: descuenta solo paros que realmente ocurrieron o van a ocurrir.
-# Si un slot de comida/break ya pasó sin marcarse, esos minutos fueron productivos.
-_paros_din = ((COMIDA_MIN if comio else 0) + breaks * 15
-              + (COMIDA_MIN if _comida_futura else 0) + _breaks_futuros * 15)
+clock_bf       = (COMIDA_MIN if _comida_futura else 0) + _breaks_futuros * 15
+_paros_din     = ((COMIDA_MIN if comio else 0) + breaks * 15
+                  + (COMIDA_MIN if _comida_futura else 0) + _breaks_futuros * 15)
 min_reales_din = duracion_total - 2 * AJUSTE_MIN - _paros_din
 
 # ── Calcular ─────────────────────────────────────────────────────────────────
@@ -459,60 +500,7 @@ objetivo_total = st.number_input(
     key="objetivo_total_input",
 )
 
-# ── Selectores de hora para comida y breaks ───────────────────────────────────
-if turno_sel == "Turno C" and es_sabado:
-    # Comida: primeras 6 horas (12am–6am); breaks: últimas 6 horas (6am–12pm)
-    col_t1, col_t2 = st.columns(2)
-    with col_t1:
-        hora_comida_idx = st.selectbox(
-            "¿En qué hora comes?",
-            options=list(range(6)),
-            format_func=lambda i: filas[i][0],
-            key="hora_comida_tabla",
-        )
-    with col_t2:
-        hora_break1_idx = st.selectbox(
-            "¿En qué hora es el break 1?",
-            options=list(range(6, 12)),
-            format_func=lambda i: filas[i][0],
-            key="hora_break1_tabla",
-        )
-    hora_break2_idx = st.selectbox(
-        "¿En qué hora es el break 2?",
-        options=list(range(6, 12)),
-        format_func=lambda i: filas[i][0],
-        key="hora_break2_tabla",
-    )
-    break_idxs = [hora_break1_idx, hora_break2_idx]
-
-elif max_breaks == 1:
-    col_t1, col_t2 = st.columns(2)
-    with col_t1:
-        hora_comida_idx = st.selectbox(
-            "¿En qué hora comes?",
-            options=list(range(len(filas))),
-            format_func=lambda i: filas[i][0],
-            key="hora_comida_tabla",
-        )
-    with col_t2:
-        hora_break_idx = st.selectbox(
-            "¿En qué hora es el break?",
-            options=list(range(len(filas))),
-            format_func=lambda i: filas[i][0],
-            key="hora_break_tabla",
-        )
-    break_idxs = [hora_break_idx]
-
-else:
-    # Turno C entre semana: solo comida, sin breaks
-    hora_comida_idx = st.selectbox(
-        "¿En qué hora comes?",
-        options=list(range(len(filas))),
-        format_func=lambda i: filas[i][0],
-        key="hora_comida_tabla",
-    )
-    break_idxs = []
-
+# hora_comida_idx y break_idxs ya vienen de los relojes de hora de arriba
 # ── Construir y mostrar tabla ─────────────────────────────────────────────────
 n = len(filas)
 
