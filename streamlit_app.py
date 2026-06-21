@@ -332,17 +332,32 @@ if st.button("Calcular", type="primary", use_container_width=True):
         st.warning(situacion + sufijo_eta)
 
     # ── Recomendación de cobertura de descansos ──────────────────────────────
-    breaks_restantes = max_breaks - breaks
-    hay_comida = not comio
-    hay_break  = breaks_restantes > 0
+    meta_101 = metas_pz[-1][1]
 
-    if proy_real < metas_pz[-1][1] and (hay_comida or hay_break) and min_restantes > 0 and ritmo_real > 0:
+    breaks_restantes = max_breaks - breaks
+
+    # Verificar si la franja de comida todavía está por venir
+    if not comio:
+        _comida_ss  = st.session_state.get("hora_comida_tabla", 0)
+        _filas_rec  = get_filas_turno(turno_sel, es_sabado, inicio_m, fin_m)
+        _t_comida   = inicio_m
+        for _ci in range(_comida_ss):
+            _t_comida += _filas_rec[_ci][1]
+        _comida_fin = _t_comida + COMIDA_MIN
+        hay_comida  = hora_actual_m < _comida_fin   # solo si aún no pasó
+    else:
+        hay_comida = False
+
+    hay_break = breaks_restantes > 0
+
+    if proy_real < meta_101 and (hay_comida or hay_break) and min_restantes > 0 and ritmo_real > 0:
         min_break_disp = breaks_restantes * 15
         extra_comida = round((ritmo_real / 60) * COMIDA_MIN) if hay_comida else 0
         extra_break  = round((ritmo_real / 60) * min_break_disp) if hay_break else 0
 
-        proy_comida = proy_real + extra_comida
-        proy_break  = proy_real + extra_break
+        # Tope en 101%
+        proy_comida = min(proy_real + extra_comida, meta_101)
+        proy_break  = min(proy_real + extra_break,  meta_101)
 
         st.divider()
         st.subheader("💡 ¿Cubrir los descansos?")
