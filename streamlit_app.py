@@ -214,11 +214,53 @@ with col4:
 
 piezas = int(st.number_input("Piezas que llevan", min_value=0, value=0, step=1))
 
+# ── Tiempo actual y franja de paros ──────────────────────────────────────────
+# Se computa aquí (fuera del botón) para que tanto el botón como la gráfica
+# usen la misma fuente de verdad y min_reales_din sea correcto.
+hora_actual_local = hora_en_turno(_ahora.hour * 60 + _ahora.minute, inicio_m)
+
+_slot_starts = []
+_t = inicio_m
+for _, _bm in filas:
+    _slot_starts.append(_t)
+    _t += _bm
+_n_slots = len(_slot_starts)
+
+def _ss_idx(key, n_slots):
+    v = st.session_state.get(key)
+    try:
+        v = int(v)
+    except (TypeError, ValueError):
+        v = 0
+    return max(0, min(v, n_slots - 1)) if n_slots > 0 else 0
+
+_comida_ss     = _ss_idx("hora_comida_tabla", _n_slots)
+_comida_ini    = _slot_starts[_comida_ss] if _n_slots > 0 else inicio_m
+_comida_futura = not comio and hora_actual_local < (_comida_ini + COMIDA_MIN)
+
+if max_breaks == 2:
+    _bss = [_ss_idx("hora_break1_tabla", _n_slots),
+            _ss_idx("hora_break2_tabla", _n_slots)]
+else:
+    _bss = [_ss_idx("hora_break_tabla", _n_slots)]
+_breaks_futuros = min(
+    max_breaks - breaks,
+    sum(1 for _bi in _bss if hora_actual_local < _slot_starts[_bi] + 15),
+)
+
+clock_bf = (COMIDA_MIN if _comida_futura else 0) + _breaks_futuros * 15
+
+# min_reales dinámico: descuenta solo paros que realmente ocurrieron o van a ocurrir.
+# Si un slot de comida/break ya pasó sin marcarse, esos minutos fueron productivos.
+_paros_din = ((COMIDA_MIN if comio else 0) + breaks * 15
+              + (COMIDA_MIN if _comida_futura else 0) + _breaks_futuros * 15)
+min_reales_din = duracion_total - 2 * AJUSTE_MIN - _paros_din
+
 # ── Calcular ─────────────────────────────────────────────────────────────────
 if st.button("Calcular", type="primary", use_container_width=True):
 
     ahora         = _ahora
-    hora_actual_m = hora_en_turno(ahora.hour * 60 + ahora.minute, inicio_m)
+    hora_actual_m = hora_actual_local
 
     min_productivos = hora_actual_m - inicio_m - AJUSTE_MIN
     if comio:
@@ -229,7 +271,7 @@ if st.button("Calcular", type="primary", use_container_width=True):
     esperadas  = round((meta_pzh / 60) * min_productivos)
     diferencia = piezas - esperadas
 
-    min_restantes = max(min_reales - min_productivos, 0)
+    min_restantes = max(min_reales_din - min_productivos, 0)
     ritmo_real    = (piezas / min_productivos) * 60
     proy_real     = round(piezas + (ritmo_real   / 60) * min_restantes)
     proy_meta     = round(piezas + (meta_pzh     / 60) * min_restantes)
@@ -244,42 +286,6 @@ if st.button("Calcular", type="primary", use_container_width=True):
         round((f / min_restantes) * 60) if f > 0 and min_restantes > 0 else None
         for f in faltan
     ]
-
-    # Inicio de cada slot (filas ya está definido antes del botón)
-    _slot_starts_b = []
-    _t_b = inicio_m
-    for _, _bm in filas:
-        _slot_starts_b.append(_t_b)
-        _t_b += _bm
-
-    # helper: session_state puede devolver None al cambiar turno → forzar int
-    def _ss_idx(key, n_slots):
-        v = st.session_state.get(key)
-        try:
-            v = int(v)
-        except (TypeError, ValueError):
-            v = 0
-        return max(0, min(v, n_slots - 1)) if n_slots > 0 else 0
-
-    n_slots_b = len(_slot_starts_b)
-
-    # ¿La franja de comida aún no terminó?
-    _comida_ss_b   = _ss_idx("hora_comida_tabla", n_slots_b)
-    _comida_ini_b  = _slot_starts_b[_comida_ss_b] if n_slots_b > 0 else inicio_m
-    _comida_futura = not comio and hora_actual_m < (_comida_ini_b + COMIDA_MIN)
-
-    # ¿Cuántos slots de break aún no terminaron?
-    if max_breaks == 2:
-        _bss_b = [_ss_idx("hora_break1_tabla", n_slots_b),
-                  _ss_idx("hora_break2_tabla", n_slots_b)]
-    else:
-        _bss_b = [_ss_idx("hora_break_tabla", n_slots_b)]
-    _breaks_cb = min(
-        max_breaks - breaks,
-        sum(1 for _bi in _bss_b if hora_actual_m < _slot_starts_b[_bi] + 15),
-    )
-
-    clock_bf = (COMIDA_MIN if _comida_futura else 0) + _breaks_cb * 15
 
     eta_real_list, eta_turbo_list = [], []
     for f in faltan:
@@ -378,10 +384,9 @@ if st.button("Calcular", type="primary", use_container_width=True):
     # ── Recomendación de cobertura de descansos ──────────────────────────────
     meta_101 = metas_pz[-1][1]
 
-    # Reutiliza los checks de timing ya calculados para clock_bf
     hay_comida     = _comida_futura
-    hay_break      = _breaks_cb > 0
-    min_break_disp = _breaks_cb * 15
+    hay_break      = _breaks_futuros > 0
+    min_break_disp = _breaks_futuros * 15
 
     if proy_real < meta_101 and (hay_comida or hay_break) and min_restantes > 0 and ritmo_real > 0:
         extra_comida = round((ritmo_real / 60) * COMIDA_MIN) if hay_comida else 0
@@ -590,8 +595,6 @@ st.download_button(
 st.divider()
 st.subheader("📈 Gráfica de producción")
 
-hora_actual_local = hora_en_turno(_ahora.hour * 60 + _ahora.minute, inicio_m)
-
 # Rangos de cada slot: inicio acumulado por fila
 slot_starts = []
 t_acc = inicio_m
@@ -639,7 +642,7 @@ else:
         st.caption("Ingresa las piezas de cada hora para ver la gráfica.")
     else:
         # ── Metas de referencia ──────────────────────────────────────────────
-        meta_100_v = objetivo_total if objetivo_total > 0 else round((meta_pzh / 60) * min_reales)
+        meta_100_v = objetivo_total if objetivo_total > 0 else round((meta_pzh / 60) * min_reales_din)
         metas_ref = [
             ("85%",  round(meta_100_v * 0.85), "#666677"),
             ("90%",  round(meta_100_v * 0.90), "#8888aa"),
