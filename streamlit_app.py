@@ -786,21 +786,31 @@ else:
         ax.plot(px_turbo, py_turbo, color="#ffcc55", linewidth=1.5,
                 linestyle="--", alpha=0.9, label="Proyección turbo")
 
-        # Puntos de ETA en la gráfica (más alto alcanzable de cada proyección)
+        # Puntos de ETA — solo el dot en la gráfica; texto en el resumen de abajo
         if etas_real:
             pct, eta_m, meta_v = etas_real[-1]
-            ax.plot(eta_m, meta_v, "o", color="#ff7777", markersize=5, zorder=6)
-            ax.annotate(f"{pct} {m2str(eta_m)}", xy=(eta_m, meta_v),
-                        xytext=(eta_m - (fin_m - inicio_m) * 0.05, meta_v * 1.025),
-                        color="#ff9999", fontsize=6.5, zorder=7,
-                        arrowprops=dict(arrowstyle="-", color="#ff777755", lw=0.8))
+            ax.plot(eta_m, meta_v, "o", color="#ff7777", markersize=6, zorder=6)
         if etas_turbo:
             pct, eta_m, meta_v = etas_turbo[-1]
-            ax.plot(eta_m, meta_v, "o", color="#ffcc55", markersize=5, zorder=6)
-            ax.annotate(f"{pct} {m2str(eta_m)}", xy=(eta_m, meta_v),
-                        xytext=(eta_m + (fin_m - inicio_m) * 0.01, meta_v * 0.975),
-                        color="#ffdd88", fontsize=6.5, zorder=7,
-                        arrowprops=dict(arrowstyle="-", color="#ffaa0055", lw=0.8))
+            ax.plot(eta_m, meta_v, "o", color="#ffcc55", markersize=6, zorder=6)
+
+        # Caja de ETAs en la esquina superior izquierda de la gráfica
+        eta_lines = []
+        if etas_real:
+            pct, eta_m, _ = etas_real[-1]
+            eta_lines.append(f"● {pct} al ritmo actual → {m2str(eta_m)}")
+        if etas_turbo:
+            pct, eta_m, _ = etas_turbo[-1]
+            eta_lines.append(f"● {pct} al turbo        → {m2str(eta_m)}")
+        if eta_lines:
+            ax.text(
+                0.01, 0.98, "\n".join(eta_lines),
+                transform=ax.transAxes,
+                fontsize=7.5, va="top", ha="left",
+                color="white", linespacing=1.6,
+                bbox=dict(boxstyle="round,pad=0.4", facecolor="#1a1a2e",
+                          edgecolor="#445566", alpha=0.85),
+            )
 
         # Ejes
         tick_step = max(1, len(slot_starts) // 6)
