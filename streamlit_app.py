@@ -609,16 +609,18 @@ if not active_slots:
     st.info("El turno aún no ha iniciado — la gráfica aparecerá cuando empiece.")
 else:
     st.markdown("**Piezas producidas por hora:**")
-    ncols = min(4, len(active_slots))
-    grid_cols = st.columns(ncols)
+    # Columnas fijas (4) para evitar el error de DOM de React al cambiar ncols
+    grid_cols = st.columns(4)
     piezas_hora = {}
     for j, (i, label, s_start, s_end) in enumerate(active_slots):
         es_parcial = hora_actual_local < s_end
-        with grid_cols[j % ncols]:
+        with grid_cols[j % 4]:
             val = st.number_input(
-                label + (" *(en curso)*" if es_parcial else ""),
+                label,
                 min_value=0, value=0, step=1, key=f"ph_{i}",
             )
+            if es_parcial:
+                st.caption("en curso")
         mins_slot = max(min(hora_actual_local, s_end) - s_start, 1)
         piezas_hora[i] = (val, es_parcial, mins_slot)
 
