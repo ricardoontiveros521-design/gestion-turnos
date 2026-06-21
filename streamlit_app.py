@@ -536,12 +536,8 @@ for idx, (_, base_min) in enumerate(filas):
         m = base_min - comida_ded - break_ded
     pre_minutos.append(max(m, 0))
 
-_meta_t = objetivo_total if objetivo_total > 0 else round((meta_pzh / 60) * min_oficiales)
-
-if objetivo_total > 0:
-    rate_tabla = objetivo_total / sum(pre_minutos) if sum(pre_minutos) > 0 else meta_pzh / 60
-else:
-    rate_tabla = meta_pzh / 60
+_meta_t    = objetivo_total if objetivo_total > 0 else round((meta_pzh / 60) * min_oficiales)
+rate_tabla = _meta_t / sum(pre_minutos) if sum(pre_minutos) > 0 else meta_pzh / 60
 
 redist = 0
 
