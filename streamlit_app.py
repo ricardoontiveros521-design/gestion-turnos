@@ -602,12 +602,19 @@ else:
             ideal_x.append(t_run)
             ideal_y.append(run_100)
 
-        # ── Línea turbo (ritmo máximo real, acumulada) ───────────────────────
+        # ── Línea turbo (ritmo máximo real, acumulada — se detiene en 101%) ─────
         turbo_x, turbo_y = [inicio_m], [0]
         t_run, run_turbo = inicio_m, 0
         for idx_r, (_, base_min) in enumerate(filas):
-            t_run    += base_min
+            prev_turbo = run_turbo
+            t_run     += base_min
             run_turbo += round((max_real_pzh / 60) * pre_minutos[idx_r])
+            if run_turbo >= meta_101_v:
+                frac    = (meta_101_v - prev_turbo) / (run_turbo - prev_turbo) if run_turbo > prev_turbo else 1.0
+                t_cross = (t_run - base_min) + frac * base_min
+                turbo_x.append(t_cross)
+                turbo_y.append(meta_101_v)
+                break
             turbo_x.append(t_run)
             turbo_y.append(run_turbo)
 
@@ -688,9 +695,9 @@ else:
 
         # Líneas horizontales de referencia
         for pct, meta_v, color in metas_ref:
-            ax.axhline(meta_v, color=color, linewidth=0.8, linestyle=":", alpha=0.6)
+            ax.axhline(meta_v, color=color, linewidth=1.0, linestyle="--", alpha=0.75)
             ax.text(fin_m + (fin_m - inicio_m) * 0.01, meta_v,
-                    pct, color=color, fontsize=7, va="center", ha="left")
+                    pct, color=color, fontsize=8, va="center", ha="left", fontweight="bold")
 
         # Turbo (fondo)
         ax.plot(turbo_x, turbo_y, color="#ffaa00", linewidth=1.0,
@@ -742,15 +749,16 @@ else:
             ticks_x = list(ticks_x) + [fin_m]
         ax.set_xticks(ticks_x)
         ax.set_xticklabels([m2str(x) for x in ticks_x],
-                           color="#aaaaaa", fontsize=7, rotation=30, ha="right")
+                           color="#dddddd", fontsize=8, rotation=30, ha="right")
         ax.set_xlim(inicio_m - 3, fin_m + (fin_m - inicio_m) * 0.08)
         ax.set_ylim(0, meta_101_v * 1.08)
         ax.set_yticks([m[1] for m in metas_ref])
         ax.set_yticklabels([f"{m[1]:,}" for m in metas_ref],
-                           color="#aaaaaa", fontsize=7)
-        ax.tick_params(colors="#333344", length=3)
+                           color="#dddddd", fontsize=8)
+        ax.tick_params(colors="#888899", length=4, width=1)
         for sp in ax.spines.values():
-            sp.set_edgecolor("#222233")
+            sp.set_edgecolor("#445566")
+        ax.grid(axis="y", color="#2a3a4a", linewidth=0.5, linestyle="-", alpha=0.6)
 
         ax.legend(loc="upper left", fontsize=7, facecolor="#1a1a2e",
                   labelcolor="white", framealpha=0.75, edgecolor="#333344",
