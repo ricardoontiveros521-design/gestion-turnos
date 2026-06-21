@@ -404,7 +404,6 @@ objetivo_total = st.number_input(
     min_value=0, value=0, step=10,
     help="Útil cuando las decimales no cuadran. Este número se convierte en el 100% y la tabla distribuye de ahí.",
 )
-rate_tabla = (objetivo_total / min_oficiales) if objetivo_total > 0 else (meta_pzh / 60)
 
 # ── Selectores de hora para comida y breaks ───────────────────────────────────
 if turno_sel == "Turno C" and es_sabado:
@@ -461,7 +460,28 @@ else:
     break_idxs = []
 
 # ── Construir y mostrar tabla ─────────────────────────────────────────────────
-n      = len(filas)
+n = len(filas)
+
+# Pre-pase: calcular minutos efectivos por fila con todas las deducciones
+pre_minutos = []
+for idx, (_, base_min) in enumerate(filas):
+    comida_ded = COMIDA_MIN if idx == hora_comida_idx else 0
+    break_ded  = break_idxs.count(idx) * 15
+    if idx == 0:
+        m = base_min - 10 - comida_ded - break_ded
+    elif idx == n - 1:
+        m = base_min - comida_ded - break_ded - 10
+    else:
+        m = base_min - comida_ded - break_ded
+    pre_minutos.append(max(m, 0))
+
+# Rate correcto: si hay objetivo, dividir entre los minutos reales de la tabla
+# (+10 porque redist redistribuye los 10 min de arranque a las otras filas)
+if objetivo_total > 0:
+    rate_tabla = objetivo_total / (sum(pre_minutos) + 10)
+else:
+    rate_tabla = meta_pzh / 60
+
 redist = (rate_tabla * 10) / (n - 1) if n > 1 else 0
 
 tabla_rows = []
@@ -471,18 +491,10 @@ for idx, (label, base_min) in enumerate(filas):
     comida_ded = COMIDA_MIN if idx == hora_comida_idx else 0
     break_ded  = break_idxs.count(idx) * 15
 
-    if is_first:
-        minutos = base_min - 10 - comida_ded - break_ded
-    elif is_last:
-        minutos = base_min - comida_ded - break_ded - 10
-    else:
-        minutos = base_min - comida_ded - break_ded
-
-    minutos = max(minutos, 0)
-    # Para el acumulado la última hora usa 60 min (sin el -10 de parada anticipada)
+    minutos      = pre_minutos[idx]
     minutos_acum = max(base_min - comida_ded - break_ded, 0) if is_last else minutos
-    pz_acum = rate_tabla * minutos_acum
-    base_pz = rate_tabla * minutos + (0 if is_last else redist)
+    pz_acum      = rate_tabla * minutos_acum
+    base_pz      = rate_tabla * minutos + (0 if is_last else redist)
 
     tabla_rows.append([
         label,
