@@ -569,10 +569,12 @@ for row in tabla_rows:
     running += row[5]   # índice 5 = pz_puro
     row[5] = running    # reemplazar temporal por acumulado
 
-# Fila de totales
+# Fila de totales — 100% y 101% se calculan desde el objetivo exacto para
+# evitar la acumulación de errores de redondeo por fila.
+_meta_t = objetivo_total if objetivo_total > 0 else round((meta_pzh / 60) * min_reales)
 totales = ["Total",
-           sum(r[1] for r in tabla_rows),
-           sum(r[2] for r in tabla_rows),
+           round(_meta_t * 1.01),
+           _meta_t,
            sum(r[3] for r in tabla_rows),
            sum(r[4] for r in tabla_rows),
            running]
