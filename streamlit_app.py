@@ -336,22 +336,39 @@ if st.button("Calcular", type="primary", use_container_width=True):
 
     breaks_restantes = max_breaks - breaks
 
-    # Verificar si la franja de comida todavía está por venir
-    if not comio:
-        _comida_ss  = st.session_state.get("hora_comida_tabla", 0)
-        _filas_rec  = get_filas_turno(turno_sel, es_sabado, inicio_m, fin_m)
-        _t_comida   = inicio_m
-        for _ci in range(_comida_ss):
-            _t_comida += _filas_rec[_ci][1]
-        _comida_fin = _t_comida + COMIDA_MIN
-        hay_comida  = hora_actual_m < _comida_fin   # solo si aún no pasó
-    else:
-        hay_comida = False
+    # Calcular el inicio de cada slot para verificar si ya pasó su hora
+    _filas_rec   = get_filas_turno(turno_sel, es_sabado, inicio_m, fin_m)
+    _slot_starts = []
+    _t = inicio_m
+    for _, _bm in _filas_rec:
+        _slot_starts.append(_t)
+        _t += _bm
 
-    hay_break = breaks_restantes > 0
+    # Comida: solo recomendar si el slot de comida aún no terminó
+    _comida_ss  = st.session_state.get("hora_comida_tabla", 0)
+    _comida_ini = _slot_starts[_comida_ss] if _comida_ss < len(_slot_starts) else inicio_m
+    hay_comida  = not comio and hora_actual_m < (_comida_ini + COMIDA_MIN)
+
+    # Breaks: solo recomendar si hay breaks sin tomar Y algún slot de break aún no pasó
+    if breaks_restantes > 0:
+        if max_breaks == 2:
+            _bss = [
+                st.session_state.get("hora_break1_tabla", len(_slot_starts) // 2),
+                st.session_state.get("hora_break2_tabla", len(_slot_starts) // 2),
+            ]
+        else:
+            _bss = [st.session_state.get("hora_break_tabla", len(_slot_starts) // 2)]
+        _breaks_futuros = sum(
+            1 for _bi in _bss
+            if _bi < len(_slot_starts) and hora_actual_m < _slot_starts[_bi] + 15
+        )
+        hay_break      = _breaks_futuros > 0
+        min_break_disp = min(breaks_restantes, _breaks_futuros) * 15
+    else:
+        hay_break      = False
+        min_break_disp = 0
 
     if proy_real < meta_101 and (hay_comida or hay_break) and min_restantes > 0 and ritmo_real > 0:
-        min_break_disp = breaks_restantes * 15
         extra_comida = round((ritmo_real / 60) * COMIDA_MIN) if hay_comida else 0
         extra_break  = round((ritmo_real / 60) * min_break_disp) if hay_break else 0
 
